@@ -18,21 +18,114 @@ export const TUITION = {
   currency: 'MNT',
 };
 
-// ─── Урамшуулал ──────────────────────────────────────────────────────────
+// ─── Хөнгөлөлт, тэтгэлгийн бодлого ───────────────────────────────────────
+/**
+ * Эх сурвалж: 2026-2027 оны элсэлтийн "Тэтгэлэг, хөнгөлөлтийн бодлого" зурагт хуудас.
+ *
+ * depositDeductible — 300,000₮ суудлын хураамж сургалтын төлбөрөөс хасагдах эсэх:
+ *   false → хураамж нь төлбөрөөс ТУСДАА (100% хөнгөлөлтөд хасах төлбөр байхгүй)
+ *   true  → хураамж нь ХӨНГӨЛСӨН дүнгээс хасагдана
+ */
 export const INCENTIVES = {
-  /** ЭЕШ-ийн босго оноог хангасан */
-  qualified: {
+  /** 1. Орон нутгийн элсэгчдэд */
+  rural_full: {
+    id: 'rural_full',
     rate: 1.0,
-    label: '100% тэтгэлэг',
-    reason: 'ЭЕШ-ийн босго оноог хангасан',
+    label: '100% хөнгөлөлт',
+    reason: 'Орон нутгаас элсэж, ЭЕШ-ийн босго онооны шаардлагыг хангасан',
+    note: 'Бакалаврын бүх хөтөлбөрт хамаарна. 2026-2027 оны хичээлийн жилийн төлбөр.',
+    depositDeductible: false,
   },
-  /** Босго хүрээгүй ч элсэх сонирхолтой */
-  standard: {
+  /** 3. "30+" хөтөлбөр */
+  thirty_plus: {
+    id: 'thirty_plus',
+    rate: 0.5,
+    label: '50% хөнгөлөлт',
+    reason: '"30+" хөтөлбөр — 30-аас дээш настай, мэргэжлээрээ 3-аас дээш жил ажилласан',
+    note: 'ЭЕШ-ийн оноогүй байж болно. Эчнээ болон зайн сургалтаар бакалаврын зэрэг олгоно.',
+    depositDeductible: true,
+  },
+  /** 4. Хоёр дахь мэргэжлийн хөтөлбөр */
+  second_degree: {
+    id: 'second_degree',
+    rate: 0.5,
+    label: '50% хөнгөлөлт',
+    reason: 'Хоёр дахь мэргэжлийн хөтөлбөр — бакалаврын зэрэгтэй иргэн',
+    note: 'Эчнээ болон зайн хэлбэрээр элсүүлнэ.',
+    depositDeductible: true,
+  },
+  /** 5. Магистрын хөтөлбөр (орон нутгийн) */
+  master_rural: {
+    id: 'master_rural',
+    rate: 0.4,
+    label: '40% хөнгөлөлт',
+    reason: 'Орон нутгаас магистрын хөтөлбөрт элсэгч',
+    note: '2026-2027 оны хичээлийн жилийн төлбөр.',
+    depositDeductible: true,
+  },
+  /** 2. Бэлтгэл ангийн хөтөлбөр */
+  prep_class: {
+    id: 'prep_class',
     rate: 0.2,
     label: '20% хөнгөлөлт',
-    reason: 'ЭЕШ-ийн босго хүрээгүй ч элсэх боломжтой',
+    reason: 'Бэлтгэл ангийн хөтөлбөр — ЭЕШ-ийн босго онооны шаардлага хангаагүй',
+    note: 'Эчнээ сургалтад сурах явцад ЭЕШ-д бэлтгэх сургалтад хамруулна.',
+    depositDeductible: true,
+  },
+  /** Аль ч хөнгөлөлтөд хамрагдаагүй */
+  none: {
+    id: 'none',
+    rate: 0,
+    label: 'Хөнгөлөлтгүй',
+    reason: 'Дээрх хөнгөлөлтийн аль нэгэнд хамрагдах нөхцөл бүрдээгүй',
+    note: 'Элсэлтийн албанаас нэмэлт боломжийг лавлана уу.',
+    depositDeductible: true,
   },
 };
+
+/**
+ * Элсэгчийн нөхцөл байдлаас хамаарч хамрагдах БҮХ хөнгөлөлтийг олоод,
+ * хамгийн өндөр хувьтайг нь буцаана.
+ *
+ * @param {{
+ *   level?: 'bachelor'|'master',
+ *   isRural?: boolean,      // орон нутгаас элсэж байгаа эсэх
+ *   meetsEesh?: boolean,    // ЭЕШ-ийн босго хангасан эсэх
+ *   hasEesh?: boolean,      // ЭЕШ өгсөн эсэх
+ *   age?: number,
+ *   workYears?: number,     // мэргэжлээрээ ажилласан жил
+ *   hasBachelor?: boolean,  // бакалаврын зэрэгтэй эсэх
+ * }} profile
+ * @returns {{best: object, eligible: object[]}}
+ */
+export function determineIncentive(profile = {}) {
+  const {
+    level = 'bachelor',
+    isRural = false,
+    meetsEesh = false,
+    hasEesh = true,
+    age = null,
+    workYears = null,
+    hasBachelor = false,
+  } = profile;
+
+  const eligible = [];
+
+  if (level === 'master') {
+    if (isRural) eligible.push(INCENTIVES.master_rural);
+  } else {
+    if (isRural && meetsEesh) eligible.push(INCENTIVES.rural_full);
+    if (!meetsEesh) eligible.push(INCENTIVES.prep_class);
+  }
+
+  if (hasBachelor) eligible.push(INCENTIVES.second_degree);
+  if (!hasEesh && Number(age) >= 30 && Number(workYears) >= 3) {
+    eligible.push(INCENTIVES.thirty_plus);
+  }
+
+  const best = eligible.reduce((a, b) => (!a || b.rate > a.rate ? b : a), null);
+  return { best: best ?? INCENTIVES.none, eligible };
+}
 
 /**
  * ЭЕШ-ийн бүлгүүдийг хэрхэн шалгах вэ?
@@ -136,6 +229,9 @@ export function formatMnt(amount) {
  *
  * @param {string} programIdOrName
  * @param {Array<{subject: string, score: number}>} scores
+ * @param {{forceIncentive?: 'full'|'half'|'standard'}} [options]
+ *        forceIncentive — тооцоог давж, тодорхой урамшуулал оногдуулах
+ *        (жишээ нь элсэлтийн комиссын шийдвэрээр 50% олгох үед)
  * @returns {{
  *   ok: boolean, error?: string,
  *   program?: object, qualified?: boolean,
@@ -144,7 +240,7 @@ export function formatMnt(amount) {
  *   annualAfterDiscount?: number, seatDeposit?: number, summary?: string
  * }}
  */
-export function evaluateApplicant(programIdOrName, scores) {
+export function evaluateApplicant(programIdOrName, scores, options = {}) {
   const program = findProgram(programIdOrName);
   if (!program) {
     return { ok: false, error: `"${programIdOrName}" гэсэн хөтөлбөр олдсонгүй.` };
@@ -157,9 +253,8 @@ export function evaluateApplicant(programIdOrName, scores) {
     }))
     .filter((s) => s.subject && Number.isFinite(s.score));
 
-  if (!normalized.length) {
-    return { ok: false, error: 'ЭЕШ-ийн оноо өгөгдөөгүй байна.' };
-  }
+  // Оноо байхгүй байж болно — "30+" болон хоёр дахь мэргэжлийн хөтөлбөрт
+  // ЭЕШ шаардахгүй. Ийм үед босго хангаагүй гэж үзээд тооцоог үргэлжлүүлнэ.
 
   // Бүлэг тус бүрийг шалгах: бүлэг доторх аль нэг хичээл босго давахад хангагдана
   const groupResults = program.examGroups.map((group) => {
@@ -184,15 +279,37 @@ export function evaluateApplicant(programIdOrName, scores) {
       ? groupResults.some((g) => g.met)
       : groupResults.every((g) => g.met);
 
-  const incentive = qualified ? INCENTIVES.qualified : INCENTIVES.standard;
+  const { best: incentive, eligible } = options.forceIncentive
+    ? { best: INCENTIVES[options.forceIncentive] ?? INCENTIVES.none, eligible: [] }
+    : determineIncentive({
+        ...options,
+        meetsEesh: qualified,
+        // Оноо огт өгөөгүй бол ЭЕШ өгөөгүй гэж үзнэ ("30+" хөтөлбөрт чухал)
+        hasEesh: normalized.length > 0,
+      });
+
   const discountAmount = Math.round(TUITION.baseAnnual * incentive.rate);
   const annualAfterDiscount = TUITION.baseAnnual - discountAmount;
+  const seatDeposit = TUITION.seatDeposit;
+
+  // Хураамж хөнгөлсөн дүнгээс хасагдах уу, эсвэл тусдаа төлөгдөх үү
+  const remainingBalance = incentive.depositDeductible
+    ? Math.max(0, annualAfterDiscount - seatDeposit)
+    : annualAfterDiscount;
+
+  // Элсэгчийн нийт төлөх дүн (хураамж оруулаад)
+  const totalPayable = incentive.depositDeductible
+    ? annualAfterDiscount
+    : annualAfterDiscount + seatDeposit;
+
+  const depositNote = incentive.depositDeductible
+    ? `${formatMnt(seatDeposit)} хураамж нь хөнгөлсөн дүнгээс хасагдана.`
+    : `${formatMnt(seatDeposit)} хураамж нь сургалтын төлбөрөөс тусдаа.`;
 
   const summary =
     `${program.name}: ${incentive.label} (${incentive.reason}). ` +
-    `Жилийн төлбөр ${formatMnt(TUITION.baseAnnual)} → ` +
-    `${formatMnt(annualAfterDiscount)}. ` +
-    `Суудал баталгаажуулах хураамж ${formatMnt(TUITION.seatDeposit)}.`;
+    `Жилийн төлбөр ${formatMnt(TUITION.baseAnnual)} → ${formatMnt(annualAfterDiscount)}. ` +
+    depositNote;
 
   return {
     ok: true,
@@ -200,10 +317,15 @@ export function evaluateApplicant(programIdOrName, scores) {
     qualified,
     groupResults,
     incentive,
+    eligibleIncentives: eligible,
     baseAnnual: TUITION.baseAnnual,
     discountAmount,
     annualAfterDiscount,
-    seatDeposit: TUITION.seatDeposit,
+    seatDeposit,
+    depositDeductible: incentive.depositDeductible,
+    remainingBalance,
+    totalPayable,
+    depositNote,
     summary,
   };
 }

@@ -40,22 +40,19 @@ export const TOOLS = [
   {
     name: 'check_eesh_and_price',
     description:
-      'Хэрэглэгчийн ЭЕШ-ийн оноог хөтөлбөрийн босготой тулгаж, урамшуулал болон ' +
-      'төлбөрийг ТООЦУУЛНА. Оноог хэлсэн даруйд дуудна. ' +
-      'ЧУХАЛ: чи өөрөө босго давсан эсэхийг шүүх, хөнгөлөлт тооцох, үнэ бодохыг ' +
+      'Элсэгчийн нөхцөл байдлыг үнэлж, хөнгөлөлт болон төлбөрийг ТООЦУУЛНА. ' +
+      'ЭЕШ-ийн оноо болон орон нутгийн эсэхийг мэдсэн даруйд дуудна. ' +
+      'ЧУХАЛ: чи өөрөө босго давсан эсэхийг шүүх, хөнгөлөлтийн хувь сонгох, үнэ бодохыг ' +
       'ОРОЛДОЖ БОЛОХГҮЙ — зөвхөн энэ хэрэгслийн буцаасан тоог давтаж хэл.',
     strict: true,
     input_schema: {
       type: 'object',
       properties: {
-        program: {
-          type: 'string',
-          enum: PROGRAM_NAMES,
-          description: 'Хөтөлбөрийн нэр',
-        },
+        program: { type: 'string', enum: PROGRAM_NAMES, description: 'Хөтөлбөрийн нэр' },
         scores: {
           type: 'array',
-          description: 'Хэрэглэгчийн хэлсэн ЭЕШ-ийн хичээл болон оноо',
+          description:
+            'ЭЕШ-ийн хичээл болон оноо. Оноо аваагүй, эсвэл ЭЕШ өгөөгүй бол хоосон массив.',
           items: {
             type: 'object',
             properties: {
@@ -69,8 +66,31 @@ export const TOOLS = [
             additionalProperties: false,
           },
         },
+        is_rural: {
+          type: 'boolean',
+          description:
+            'Орон нутгаас (Улаанбаатараас гадуур) элсэж байгаа эсэх. ' +
+            '100% хөнгөлөлтөд ЗААВАЛ шаардлагатай тул үргэлж асууж тодруул.',
+        },
+        level: {
+          type: 'string',
+          enum: ['bachelor', 'master'],
+          description: 'Бакалавр эсвэл магистрын хөтөлбөр. Тодорхойгүй бол bachelor.',
+        },
+        age: {
+          type: 'number',
+          description: 'Элсэгчийн нас. Мэдэхгүй эсвэл хамаагүй бол 0.',
+        },
+        work_years: {
+          type: 'number',
+          description: 'Мэргэжлээрээ ажилласан жил. Мэдэхгүй эсвэл хамаагүй бол 0.',
+        },
+        has_bachelor: {
+          type: 'boolean',
+          description: 'Аль хэдийн бакалаврын зэрэгтэй эсэх (хоёр дахь мэргэжил).',
+        },
       },
-      required: ['program', 'scores'],
+      required: ['program', 'scores', 'is_rural', 'level', 'age', 'work_years', 'has_bachelor'],
       additionalProperties: false,
     },
   },
@@ -181,9 +201,18 @@ export async function executeTool(call, ctx) {
       };
     }
 
-    // ─── ЭЕШ шалгах, үнэ тооцох (кодоор) ───────────────────────────────
+    // ─── Хөнгөлөлт, үнэ тооцох (кодоор) ────────────────────────────────
     if (name === 'check_eesh_and_price') {
-      const result = evaluateApplicant(input.program, input.scores);
+      const profile = {
+        level: input.level === 'master' ? 'master' : 'bachelor',
+        isRural: Boolean(input.is_rural),
+        hasEesh: Array.isArray(input.scores) && input.scores.length > 0,
+        age: Number(input.age) || 0,
+        workYears: Number(input.work_years) || 0,
+        hasBachelor: Boolean(input.has_bachelor),
+      };
+
+      const result = evaluateApplicant(input.program, input.scores, profile);
       if (!result.ok) return { content: result.error, isError: true };
 
       await saveLead(ctx.psid, {
@@ -191,6 +220,8 @@ export async function executeTool(call, ctx) {
         programName: result.program.name,
         eesh: input.scores,
         qualified: result.qualified,
+        isRural: profile.isRural,
+        incentiveId: result.incentive.id,
         incentiveLabel: result.incentive.label,
         annualAfterDiscount: result.annualAfterDiscount,
         stage: 'eesh_checked',
@@ -204,18 +235,33 @@ export async function executeTool(call, ctx) {
         )
         .join(' | ');
 
+      const otherOptions = (result.eligibleIncentives ?? [])
+        .filter((i) => i.id !== result.incentive.id)
+        .map((i) => `${i.label} (${i.reason})`)
+        .join('; ');
+
+      const depositLine = result.depositDeductible
+        ? `- Суудлын хураамж ${formatMnt(result.seatDeposit)} нь ЭНЭ ХӨНГӨЛСӨН ДҮНГЭЭС хасагдана\n` +
+          `- Хураамж төлсний дараах үлдэгдэл: ${formatMnt(result.remainingBalance)}\n`
+        : `- Суудлын хураамж ${formatMnt(result.seatDeposit)} нь сургалтын төлбөрөөс ТУСДАА төлөгдөнө\n`;
+
       return {
         content:
           `ТООЦООЛСОН ҮР ДҮН (эдгээр тоог яг хэвээр нь хэрэглэ, өөрөө бүү тооцоол):\n` +
           `- Шалгалтын задаргаа: ${breakdown}\n` +
           `- Босго хангасан эсэх: ${result.qualified ? 'ТИЙМ' : 'ҮГҮЙ'}\n` +
-          `- Урамшуулал: ${result.incentive.label} (${result.incentive.reason})\n` +
+          `- Орон нутгийн элсэгч: ${profile.isRural ? 'ТИЙМ' : 'ҮГҮЙ'}\n` +
+          `- ОЛГОГДОХ ХӨНГӨЛӨЛТ: ${result.incentive.label} — ${result.incentive.reason}\n` +
+          (result.incentive.note ? `- Тайлбар: ${result.incentive.note}\n` : '') +
+          (otherOptions ? `- Бас хамрагдаж болох: ${otherOptions}\n` : '') +
           `- Жилийн үндсэн төлбөр: ${formatMnt(result.baseAnnual)}\n` +
           `- Хөнгөлөлт: ${formatMnt(result.discountAmount)}\n` +
-          `- Төлөх дүн: ${formatMnt(result.annualAfterDiscount)}\n` +
-          `- Суудал баталгаажуулах хураамж: ${formatMnt(result.seatDeposit)}\n\n` +
+          `- Хөнгөлсний дараах жилийн төлбөр: ${formatMnt(result.annualAfterDiscount)}\n` +
+          depositLine +
+          `- Элсэгчийн нийт төлөх дүн: ${formatMnt(result.totalPayable)}\n\n` +
           `Хэрэглэгчид урамшуулал, үндсэн үнэ, хөнгөлсөн үнийг товч хэлээд, ` +
-          `суудлаа баталгаажуулах эсэхийг асуу. Энэ бол урьдчилсан тооцоо гэдгийг нэг өгүүлбэрээр дурд.`,
+          `суудлын хураамж хасагдах эсэхийг тодорхой хэл. Дараа нь суудлаа ` +
+          `баталгаажуулах эсэхийг асуу. Энэ бол урьдчилсан тооцоо гэдгийг нэг өгүүлбэрээр дурд.`,
       };
     }
 
