@@ -1,11 +1,15 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": null,
+  "installCommand": "npm install --omit=dev",
   "functions": {
     "api/**/*.js": {
       "maxDuration": 60,
       "includeFiles": "knowledge/**"
     }
   },
+  "outputDirectory": "public",
   "rewrites": [
     { "source": "/webhook", "destination": "/api/webhook" },
     { "source": "/health", "destination": "/api/health" }

@@ -100,7 +100,8 @@ export async function sendText(psid, text, quickReplies) {
     });
   }
 
-  log.debug('Мессеж илгээлээ', { psid: maskPsid(psid), parts: parts.length });
+  // info түвшинд бичнэ — production дээр хариу явсан эсэхийг харах гол шалгуур
+  log.info('Мессеж илгээлээ', { psid: maskPsid(psid), parts: parts.length });
 }
 
 /** Хэрэглэгчийн нэрийг авах (эрх байхгүй бол null буцаана) */

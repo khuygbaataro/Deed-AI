@@ -1,0 +1,10 @@
+# Vercel дээр зөвхөн api/ доторх функцууд ажиллана.
+# Express-ийн файлууд байвал Vercel тэдгээрийг сервер гэж андуурч танин
+# "Invalid export found in module src/app.js" алдаа өгдөг.
+# Эдгээрийг api/*.js импортлодоггүй тул хасахад аюулгүй.
+src/app.js
+src/server.js
+
+# Локал хэрэгслүүд — production-д хэрэггүй
+scripts/
+data/
