@@ -1,9 +1,34 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { log } from './logger.js';
 
 let cache = null;
+
+/**
+ * knowledge/ хавтсыг олох.
+ * Serverless орчинд (Vercel) ажлын хавтас өөр байж болзошгүй тул
+ * хэд хэдэн байрлалыг дараалан шалгана.
+ */
+async function resolveKnowledgeDir() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(process.cwd(), config.knowledgeDir),
+    path.resolve(here, '..', config.knowledgeDir),
+    path.resolve(here, '..', '..', config.knowledgeDir),
+  ];
+
+  for (const dir of candidates) {
+    try {
+      const info = await stat(dir);
+      if (info.isDirectory()) return dir;
+    } catch {
+      // дараагийнхыг шалгана
+    }
+  }
+  return candidates[0];
+}
 
 /**
  * knowledge/ хавтас доторх бүх .md файлыг нэрийн дарааллаар нэгтгэж уншина.
@@ -13,7 +38,7 @@ let cache = null;
 export async function loadKnowledge() {
   if (cache) return cache;
 
-  const dir = path.resolve(process.cwd(), config.knowledgeDir);
+  const dir = await resolveKnowledgeDir();
   let entries = [];
   try {
     entries = (await readdir(dir)).filter((f) => f.toLowerCase().endsWith('.md')).sort();

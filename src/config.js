@@ -27,13 +27,15 @@ export const config = {
   },
 
   // --- Claude ---
+  // Тэмдэглэл: хувьсагчийг BOT_ угтвартай нэрлэсэн. CLAUDE_* нэрс нь
+  // Claude Code зэрэг хэрэгслийн орчны хувьсагчтай мөргөлдөж болзошгүй.
   claude: {
     apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.CLAUDE_MODEL || 'claude-opus-5',
+    model: process.env.BOT_MODEL || 'claude-opus-5',
     // low | medium | high | xhigh | max — чатбот учир хурдыг эрхэмлэж low
-    effort: process.env.CLAUDE_EFFORT || 'low',
-    maxTokens: num(process.env.CLAUDE_MAX_TOKENS, 1500),
-    maxToolLoops: num(process.env.CLAUDE_MAX_TOOL_LOOPS, 4),
+    effort: process.env.BOT_EFFORT || 'low',
+    maxTokens: num(process.env.BOT_MAX_TOKENS, 1500),
+    maxToolLoops: num(process.env.BOT_MAX_TOOL_LOOPS, 4),
   },
 
   // --- Яриа/сесс ---

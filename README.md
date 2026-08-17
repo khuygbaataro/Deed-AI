@@ -130,16 +130,66 @@ Facebook хуудсандаа Messenger-ээр мессеж бичээд хар�
 
 ## 5. Production-д байршуулах
 
-Байнга ажиллах сервер хэрэгтэй (ngrok тохирохгүй). Хялбар сонголтууд:
-**Railway**, **Render**, **Fly.io**, эсвэл өөрийн VPS.
+Webhook-ийг тогтмол хаягтай, интернэтээс хандах боломжтой газар байршуулна
+(ngrok зөвхөн хөгжүүлэлтэд).
 
-Ямар ч платформ дээр:
+### Сонголт A: Vercel (serverless)
+
+Төсөл нь Vercel дээр шууд ажиллахаар бэлдсэн: `api/webhook.js` функц,
+`vercel.json` тохиргоо.
+
+**1. Redis-ээ эхлээд холбоно (ЗААВАЛ).** Serverless функцийн санах ой дуудлага
+бүрт цэвэрлэгддэг тул үүнгүйгээр бот өмнөх мессежийг санахгүй, давхардсан
+мессежийг шүүхгүй.
+
+Vercel Dashboard → төсөл → **Storage** → **Upstash for Redis** → Connect.
+`KV_REST_API_URL`, `KV_REST_API_TOKEN` хувьсагчид автоматаар нэмэгдэнэ.
+
+**2. Орчны хувьсагчид.** Settings → Environment Variables:
+
+```
+ANTHROPIC_API_KEY, FB_VERIFY_TOKEN, FB_PAGE_ACCESS_TOKEN, FB_APP_SECRET
+```
+
+**3. Deploy.**
+
+```bash
+npx vercel --prod
+```
+
+(эсвэл GitHub repo-г Vercel-д холбоход push бүрт автоматаар deploy хийнэ)
+
+**4. Шалгах.** `https://<төсөл>.vercel.app/health` руу орж `store: {"driver":"redis"}`
+байгаа эсэх, `knowledge.files` тоо зөв эсэхийг хараарай.
+
+**5. Webhook хаяг:** `https://<төсөл>.vercel.app/webhook`
+
+> **Яагаад `waitUntil`?** Serverless функц хариу буцаасны дараа хөлддөг. Facebook
+> 20 секундэд 200 хүлээдэг тул шууд 200 буцаагаад, Claude-ийн ажлыг
+> `waitUntil()`-д хүлээлгэн өгснөөр функц дуустал амьд үлдэнэ.
+> `vercel.json` дотор `maxDuration: 60` тавьсан.
+
+### Сонголт B: Байнга ажиллах сервер (Railway, Render, Fly.io, VPS)
+
+Redis шаардлагагүй — санах ойд хадгална.
 
 1. Repo-г холбоно
 2. Start command: `npm start`
 3. Орчны хувьсагчид (`ANTHROPIC_API_KEY`, `FB_*`) — **`.env` файлыг хэзээ ч git-д оруулж болохгүй**
 4. `NODE_ENV=production`, `LOG_LEVEL=info`
-5. Байршуулсны дараа webhook URL-ээ шинэ домэйн руу солино
+5. Webhook хаяг: `https://<домэйн>/webhook`
+
+### Аль нь дээр вэ?
+
+| | Vercel | Байнгын сервер |
+|---|---|---|
+| Үнэ | Хэрэглээгээр, идэвхгүй үед 0 | Тогтмол сарын төлбөр |
+| Redis | Заавал хэрэгтэй | Шаардлагагүй |
+| Эхний хариу | Хүйтэн эхлэлт ~1-2 сек удаан | Тогтмол хурдан |
+| Тохируулах хялбар байдал | Дунд (Redis нэмэх) | Хялбар |
+
+Мессенжерийн ачаалал жигд бус (өдөрт хэдэн зуун мессеж) тул **Vercel + Upstash**
+хослол эдийн засгийн хувьд тохиромжтой.
 
 ### Хүн рүү шилжүүлэх (Handover Protocol)
 
@@ -156,22 +206,33 @@ Facebook хуудсандаа Messenger-ээр мессеж бичээд хар�
 
 ```
 src/
-  server.js      Express webhook — үйл явдал хүлээн авах, чиглүүлэх
+  handler.js     ★ Үйл явдлын гол логик (Express, Vercel хоёулаа дуудна)
   claude.js      Claude API дуудлага + хэрэгслийн давталт
   prompt.js      Ботын зан чанар, дүрэм, quick replies
   knowledge.js   knowledge/*.md ачаалах, кэшлэх
   tools.js       escalate_to_human, save_contact_request
   messenger.js   Send API — текст, typing, quick replies, handover
-  sessions.js    Ярианы түүх (санах ойд, TTL-тэй)
+  sessions.js    Ярианы түүх (store.js дээр суурилсан, TTL-тэй)
+  store.js       KV хадгалалт — Redis (Upstash) эсвэл санах ой
   signature.js   X-Hub-Signature-256 шалгалт
   config.js      Орчны хувьсагчид
   logger.js      JSON лог
+  app.js         Express апп
+  server.js      Байнгын серверийн эхлэл цэг (npm start)
+api/
+  webhook.js     Vercel serverless функц (/webhook)
+  health.js      Vercel эрүүл мэндийн шалгалт (/health)
 scripts/
   chat.js             Локал терминал тест
   setup-messenger.js  Цэс, товч, мэндчилгээ тохируулах
 knowledge/            ★ Ботын мэдлэгийн сан — ЭНЭ ХАВТСЫГ БӨГЛӨНӨ
+vercel.json           Vercel маршрут, maxDuration, includeFiles
 data/                 Ажиллах үед үүсдэг (git-д ордоггүй)
 ```
+
+**Хоёр эхлэл цэг, нэг логик.** `src/handler.js` бүх ажлыг хийнэ.
+`src/server.js` (Express) болон `api/webhook.js` (Vercel) зөвхөн HTTP давхаргыг
+хариуцна — тиймээс аль ч платформ дээр яг ижил ажиллана.
 
 ---
 
@@ -182,10 +243,13 @@ data/                 Ажиллах үед үүсдэг (git-д ордоггү�
 | Webhook verify амжилтгүй | `.env`-ийн `FB_VERIFY_TOKEN` болон Facebook дээр бичсэн утга адил эсэхийг шалга. ngrok URL-ийн төгсгөлд `/webhook` байх ёстой |
 | `403` буцаж, лог дээр "Гарын үсэг буруу" | `FB_APP_SECRET` буруу эсвэл дутуу |
 | Бот дуугарахгүй | Хуудас апп-д захирагдсан эсэх (`npm run setup:messenger`), Development горимд тестер эсэхээ шалга |
-| Хариу удаан | `CLAUDE_EFFORT=low` эсэхийг шалга. Мэдлэгийн сан хэт том бол багасга |
+| Хариу удаан | `BOT_EFFORT=low` эсэхийг шалга. Мэдлэгийн сан хэт том бол багасга |
 | Хариулт хэт урт | `prompt.js` доторх "Хариултын хэлбэр" дүрмийг чангатга |
 | Бот мэдээлэл зохиож байна | `knowledge/`-д тухайн сэдвээр тодорхой баримт нэм. Дүрэм нь баримтад байхгүй зүйлийг хориглодог |
-| Мэдлэгийн сан шинэчлэгдэхгүй | Серверийг дахин асаа, эсвэл `ADMIN_TOKEN` тохируулж `POST /admin/reload` дуудна |
+| Мэдлэгийн сан шинэчлэгдэхгүй | Серверийг дахин асаа (Vercel дээр redeploy), эсвэл `ADMIN_TOKEN` тохируулж `POST /admin/reload` дуудна |
+| **Vercel:** бот өмнөх мессежийг санахгүй | Redis холбоогүй байна. `/health` дээр `store.driver` `"memory"` гэж байвал Upstash-аа холбоно уу |
+| **Vercel:** нэг мессежид 2 удаа хариулж байна | Мөн л Redis дутуу — давхардал шүүлт Redis дээр ажилладаг |
+| **Vercel:** `knowledge.files: []` | `vercel.json`-ы `includeFiles` алга эсвэл `knowledge/` хавтас git-д ороогүй байна |
 
 ---
 

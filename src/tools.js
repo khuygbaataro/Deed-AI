@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { log, maskPsid } from './logger.js';
 import { notifyAdmins, passThreadControl } from './messenger.js';
 import { setHandedOver } from './sessions.js';
+import { kvAppend, kvDriver } from './store.js';
 
 /**
  * Claude-д зарлах хэрэгслүүд.
@@ -59,10 +60,29 @@ export const TOOLS = [
   },
 ];
 
-async function appendJsonl(filename, record) {
-  const dir = path.resolve(process.cwd(), config.dataDir);
-  await mkdir(dir, { recursive: true });
-  await appendFile(path.join(dir, filename), `${JSON.stringify(record)}\n`, 'utf8');
+/**
+ * Бүртгэлийг хадгална.
+ * Redis тохируулсан бол тэнд, эс бөгөөс data/ хавтсанд JSONL хэлбэрээр.
+ * Vercel зэрэг файлын систем нь бичих боломжгүй орчинд алдаа гаргалгүй лог руу бичнэ.
+ */
+async function record(kind, entry) {
+  if (kvDriver === 'redis') {
+    const ok = await kvAppend(`log:${kind}`, entry);
+    if (ok) return;
+  }
+
+  try {
+    const dir = path.resolve(process.cwd(), config.dataDir);
+    await mkdir(dir, { recursive: true });
+    await appendFile(path.join(dir, `${kind}.jsonl`), `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch (err) {
+    // Read-only файлын систем (serverless) — логоор л үлдээнэ
+    log.warn('Бүртгэлийг файлд бичиж чадсангүй, зөвхөн логонд үлдлээ', {
+      kind,
+      error: err.message,
+    });
+    log.info(`Бүртгэл: ${kind}`, entry);
+  }
 }
 
 const REASON_LABELS = {
@@ -84,20 +104,19 @@ export async function executeTool(call, ctx) {
 
   try {
     if (name === 'escalate_to_human') {
-      const record = {
+      await record('escalations', {
         ts: new Date().toISOString(),
         psid: ctx.psid,
         userName: ctx.userName ?? null,
         reason: input.reason,
         summary: input.summary,
-      };
-      await appendJsonl('escalations.jsonl', record);
+      });
       log.info('Хүн рүү шилжүүлэх хүсэлт', { psid: maskPsid(ctx.psid), reason: input.reason });
 
       let handedOver = false;
       if (!ctx.offline) {
         handedOver = await passThreadControl(ctx.psid, input.summary);
-        setHandedOver(ctx.psid, handedOver);
+        await setHandedOver(ctx.psid, handedOver);
         await notifyAdmins(
           `🔔 Шинэ хүсэлт: ${REASON_LABELS[input.reason] ?? input.reason}\n\n${input.summary}\n\n` +
             (handedOver
@@ -117,15 +136,14 @@ export async function executeTool(call, ctx) {
     }
 
     if (name === 'save_contact_request') {
-      const record = {
+      await record('leads', {
         ts: new Date().toISOString(),
         psid: ctx.psid,
         full_name: input.full_name,
         phone: input.phone,
         interest: input.interest,
         note: input.note,
-      };
-      await appendJsonl('leads.jsonl', record);
+      });
       log.info('Холбоо барих хүсэлт бүртгэгдлээ', { psid: maskPsid(ctx.psid) });
 
       if (!ctx.offline) {
