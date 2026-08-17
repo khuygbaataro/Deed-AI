@@ -17,3 +17,8 @@ Thumbs.db
 # Редактор
 .vscode/
 .idea/
+
+.vercel
+.env*
+# Загвар файлыг git-д үлдээнэ (нууц утга агуулаагүй)
+!.env.example

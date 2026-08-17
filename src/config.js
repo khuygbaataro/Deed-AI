@@ -8,20 +8,31 @@ const num = (v, dflt) => {
   return Number.isFinite(n) ? n : dflt;
 };
 
+/**
+ * Орчны хувьсагчийн текст утгыг цэвэрлэнэ.
+ * Хуулж буулгах, PowerShell-ийн pipe (\r), .env файлын мөр таслалт зэргээс
+ * үүдэн үл үзэгдэх тэмдэгт наалдвал утга чимээгүйхэн таарахгүй болдог.
+ */
+const str = (v, dflt = undefined) => {
+  if (typeof v !== 'string') return dflt;
+  const trimmed = v.trim();
+  return trimmed === '' ? dflt : trimmed;
+};
+
 export const config = {
   // --- Сервер ---
   port: num(process.env.PORT, 3000),
-  nodeEnv: process.env.NODE_ENV || 'development',
-  logLevel: process.env.LOG_LEVEL || 'info',
+  nodeEnv: str(process.env.NODE_ENV, 'development'),
+  logLevel: str(process.env.LOG_LEVEL, 'info'),
 
   // --- Facebook ---
   fb: {
-    verifyToken: process.env.FB_VERIFY_TOKEN,
-    pageAccessToken: process.env.FB_PAGE_ACCESS_TOKEN,
-    appSecret: process.env.FB_APP_SECRET,
-    graphVersion: process.env.FB_GRAPH_VERSION || 'v21.0',
+    verifyToken: str(process.env.FB_VERIFY_TOKEN),
+    pageAccessToken: str(process.env.FB_PAGE_ACCESS_TOKEN),
+    appSecret: str(process.env.FB_APP_SECRET),
+    graphVersion: str(process.env.FB_GRAPH_VERSION, 'v21.0'),
     // Facebook Page Inbox-ийн албан ёсны app ID (хүн рүү шилжүүлэхэд хэрэглэнэ)
-    inboxAppId: process.env.FB_INBOX_APP_ID || '263902037430900',
+    inboxAppId: str(process.env.FB_INBOX_APP_ID, '263902037430900'),
     // Гарын үсгийн шалгалтыг алгасах (ЗӨВХӨН локал тест дээр)
     skipSignatureCheck: bool(process.env.FB_SKIP_SIGNATURE_CHECK, false),
   },
@@ -30,10 +41,10 @@ export const config = {
   // Тэмдэглэл: хувьсагчийг BOT_ угтвартай нэрлэсэн. CLAUDE_* нэрс нь
   // Claude Code зэрэг хэрэгслийн орчны хувьсагчтай мөргөлдөж болзошгүй.
   claude: {
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.BOT_MODEL || 'claude-opus-5',
+    apiKey: str(process.env.ANTHROPIC_API_KEY),
+    model: str(process.env.BOT_MODEL, 'claude-opus-5'),
     // low | medium | high | xhigh | max — чатбот учир хурдыг эрхэмлэж low
-    effort: process.env.BOT_EFFORT || 'low',
+    effort: str(process.env.BOT_EFFORT, 'low'),
     maxTokens: num(process.env.BOT_MAX_TOKENS, 1500),
     maxToolLoops: num(process.env.BOT_MAX_TOOL_LOOPS, 4),
   },
@@ -46,8 +57,8 @@ export const config = {
   },
 
   // --- Бусад ---
-  dataDir: process.env.DATA_DIR || 'data',
-  knowledgeDir: process.env.KNOWLEDGE_DIR || 'knowledge',
+  dataDir: str(process.env.DATA_DIR, 'data'),
+  knowledgeDir: str(process.env.KNOWLEDGE_DIR, 'knowledge'),
   // Хүн рүү шилжүүлэх хүсэлт ирэхэд мэдэгдэл авах админ PSID-үүд (таслалаар)
   adminPsids: (process.env.FB_ADMIN_PSIDS || '')
     .split(',')

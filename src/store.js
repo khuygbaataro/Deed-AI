@@ -11,8 +11,11 @@
  */
 import { log } from './logger.js';
 
-const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || null;
-const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || null;
+// Орчны хувьсагчийн үл үзэгдэх зайг цэвэрлэнэ (config.js-тэй ижил шалтгаанаар)
+const clean = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
+
+const url = clean(process.env.KV_REST_API_URL) || clean(process.env.UPSTASH_REDIS_REST_URL);
+const token = clean(process.env.KV_REST_API_TOKEN) || clean(process.env.UPSTASH_REDIS_REST_TOKEN);
 
 export const kvDriver = url && token ? 'redis' : 'memory';
 
