@@ -69,11 +69,11 @@ const steps = [
           {
             locale: 'default',
             composer_input_disabled: false,
+            // Messenger-ийн үндсэн цэс дээд түвшинд 3 хүртэл сонголт дэмждэг
             call_to_actions: [
               { type: 'postback', title: '📝 Элсэлт', payload: 'ASK_ADMISSION' },
-              { type: 'postback', title: '🎓 Хөтөлбөрүүд', payload: 'ASK_PROGRAMS' },
+              { type: 'postback', title: '🌏 Гадаад хөтөлбөр', payload: 'ASK_EXCHANGE' },
               { type: 'postback', title: '🙋 Хүнтэй ярих', payload: 'ASK_HUMAN' },
-              { type: 'postback', title: '🔄 Дахин эхлэх', payload: 'RESTART' },
             ],
           },
         ],
