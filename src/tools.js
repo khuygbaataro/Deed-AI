@@ -1,23 +1,120 @@
-import { appendFile, mkdir } from 'node:fs/promises';
-import path from 'node:path';
 import { config } from './config.js';
 import { log, maskPsid } from './logger.js';
 import { notifyAdmins, passThreadControl } from './messenger.js';
 import { setHandedOver } from './sessions.js';
-import { kvAppend, kvDriver } from './store.js';
+import { getLead, saveLead } from './leads.js';
+import { PROGRAMS, TUITION, evaluateApplicant, findProgram, formatMnt } from './admissions.js';
+import { createInvoice, isQpayConfigured } from './qpay.js';
+import { kvSet } from './store.js';
+
+const PROGRAM_NAMES = PROGRAMS.map((p) => p.name);
 
 /**
  * Claude-д зарлах хэрэгслүүд.
  * strict: true — оролтын бүтэц баталгаатай зөв ирнэ.
+ *
+ * ⚠️ Мөнгө, эрхийн тооцоог AI хийхгүй. check_eesh_and_price нь admissions.js
+ * доторх кодоор тооцоолж, бэлэн үр дүнг буцаана.
  */
 export const TOOLS = [
+  {
+    name: 'set_program_interest',
+    description:
+      'Хэрэглэгч аль мэргэжлийг сонирхож байгаагаа хэлсэн үед дуудна. ' +
+      'Бүртгэлд тэмдэглээд, тухайн хөтөлбөрийн ЭЕШ-ийн шаардлагыг буцаана. ' +
+      'Хэрэглэгч мэргэжлээ нэрлэсэн даруйд дуудна — нэмэлт зөвшөөрөл шаардахгүй.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        program: {
+          type: 'string',
+          enum: PROGRAM_NAMES,
+          description: 'Хэрэглэгчийн сонирхож буй хөтөлбөрийн нэр',
+        },
+      },
+      required: ['program'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'check_eesh_and_price',
+    description:
+      'Хэрэглэгчийн ЭЕШ-ийн оноог хөтөлбөрийн босготой тулгаж, урамшуулал болон ' +
+      'төлбөрийг ТООЦУУЛНА. Оноог хэлсэн даруйд дуудна. ' +
+      'ЧУХАЛ: чи өөрөө босго давсан эсэхийг шүүх, хөнгөлөлт тооцох, үнэ бодохыг ' +
+      'ОРОЛДОЖ БОЛОХГҮЙ — зөвхөн энэ хэрэгслийн буцаасан тоог давтаж хэл.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        program: {
+          type: 'string',
+          enum: PROGRAM_NAMES,
+          description: 'Хөтөлбөрийн нэр',
+        },
+        scores: {
+          type: 'array',
+          description: 'Хэрэглэгчийн хэлсэн ЭЕШ-ийн хичээл болон оноо',
+          items: {
+            type: 'object',
+            properties: {
+              subject: {
+                type: 'string',
+                description: 'Хичээлийн нэр, жишээ: Математик, Англи хэл, Нийгэм судлал',
+              },
+              score: { type: 'number', description: 'ЭЕШ-ийн оноо (0-800)' },
+            },
+            required: ['subject', 'score'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['program', 'scores'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'save_contact_info',
+    description:
+      'Хэрэглэгчийн нэр, утасны дугаарыг бүртгэнэ. Суудал баталгаажуулахын өмнө ' +
+      'заавал шаардлагатай. Хэрэглэгч өөрөө өгсөн эсвэл өгөхийг зөвшөөрсөн үед л дуудна.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        full_name: { type: 'string', description: 'Овог нэр' },
+        phone: { type: 'string', description: 'Утасны дугаар' },
+      },
+      required: ['full_name', 'phone'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_seat_invoice',
+    description:
+      `Суудал баталгаажуулах ${formatMnt(TUITION.seatDeposit)} хураамжийн QPay нэхэмжлэх ` +
+      'үүсгэнэ. Зөвхөн хэрэглэгч суудлаа баталгаажуулахыг ТОДОРХОЙ зөвшөөрсний дараа дуудна. ' +
+      'Өмнө нь нэр, утас бүртгэгдсэн байх ёстой.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        confirmed: {
+          type: 'boolean',
+          description: 'Хэрэглэгч суудлаа баталгаажуулахыг тодорхой зөвшөөрсөн эсэх',
+        },
+      },
+      required: ['confirmed'],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'escalate_to_human',
     description:
       'Яриаг сургуулийн ажилтан руу шилжүүлнэ. Хэрэглэгч хүнтэй ярихыг хүсэх, ' +
-      'эсвэл асуулт нь хувийн бүртгэл, төлбөрийн маргаан, гомдол, онцгой нөхцөл гэх мэт ' +
-      'мэдлэгийн сангаас хариулах боломжгүй байвал энэ хэрэгслийг дуудна. ' +
-      'Зөвхөн үнэхээр шаардлагатай үед ашигла — энгийн асуултад бүү дууд.',
+      'эсвэл асуулт нь хувийн бүртгэл, төлбөрийн маргаан, гомдол зэрэг мэдлэгийн ' +
+      'сангаас хариулах боломжгүй байвал дуудна. Энгийн асуултад бүү дууд.',
     strict: true,
     input_schema: {
       type: 'object',
@@ -36,54 +133,7 @@ export const TOOLS = [
       additionalProperties: false,
     },
   },
-  {
-    name: 'save_contact_request',
-    description:
-      'Хэрэглэгч эргэж холбогдохыг хүсэж, нэр/утсаа өгсөн үед холбоо барих хүсэлтийг бүртгэнэ. ' +
-      'Зөвхөн хэрэглэгч өөрөө мэдээллээ өгсөн эсвэл өгөхийг зөвшөөрсөн тохиолдолд дуудна. ' +
-      'Хувийн мэдээллийг урьдчилж шаардаж болохгүй.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        full_name: { type: 'string', description: 'Хэрэглэгчийн нэр' },
-        phone: { type: 'string', description: 'Утасны дугаар' },
-        interest: {
-          type: 'string',
-          description: 'Сонирхож буй хөтөлбөр эсвэл сэдэв. Тодорхойгүй бол "тодорхойгүй".',
-        },
-        note: { type: 'string', description: 'Нэмэлт тэмдэглэл. Байхгүй бол хоосон мөр.' },
-      },
-      required: ['full_name', 'phone', 'interest', 'note'],
-      additionalProperties: false,
-    },
-  },
 ];
-
-/**
- * Бүртгэлийг хадгална.
- * Redis тохируулсан бол тэнд, эс бөгөөс data/ хавтсанд JSONL хэлбэрээр.
- * Vercel зэрэг файлын систем нь бичих боломжгүй орчинд алдаа гаргалгүй лог руу бичнэ.
- */
-async function record(kind, entry) {
-  if (kvDriver === 'redis') {
-    const ok = await kvAppend(`log:${kind}`, entry);
-    if (ok) return;
-  }
-
-  try {
-    const dir = path.resolve(process.cwd(), config.dataDir);
-    await mkdir(dir, { recursive: true });
-    await appendFile(path.join(dir, `${kind}.jsonl`), `${JSON.stringify(entry)}\n`, 'utf8');
-  } catch (err) {
-    // Read-only файлын систем (serverless) — логоор л үлдээнэ
-    log.warn('Бүртгэлийг файлд бичиж чадсангүй, зөвхөн логонд үлдлээ', {
-      kind,
-      error: err.message,
-    });
-    log.info(`Бүртгэл: ${kind}`, entry);
-  }
-}
 
 const REASON_LABELS = {
   user_requested: 'Хэрэглэгч хүсэлт гаргасан',
@@ -103,14 +153,191 @@ export async function executeTool(call, ctx) {
   const { name, input } = call;
 
   try {
-    if (name === 'escalate_to_human') {
-      await record('escalations', {
-        ts: new Date().toISOString(),
-        psid: ctx.psid,
-        userName: ctx.userName ?? null,
-        reason: input.reason,
-        summary: input.summary,
+    // ─── Мэргэжил сонгох ───────────────────────────────────────────────
+    if (name === 'set_program_interest') {
+      const program = findProgram(input.program);
+      if (!program) {
+        return { content: `"${input.program}" хөтөлбөр олдсонгүй.`, isError: true };
+      }
+
+      await saveLead(ctx.psid, {
+        programId: program.id,
+        programName: program.name,
+        stage: 'program_selected',
       });
+
+      const requirements = program.examGroups
+        .map((g) => `${g.subjects.join(' эсвэл ')} — ${g.minScore}+ оноо`)
+        .join('; ');
+
+      return {
+        content:
+          `Бүртгэлээ: ${program.name} (код ${program.code}).` +
+          (program.inDemand
+            ? ' Энэ нь Засгийн газрын 115-р тогтоолын ЭРЭЛТТЭЙ мэргэжлийн жагсаалтад багтсан.'
+            : '') +
+          ` ЭЕШ-ийн шаардлага: ${requirements}.` +
+          ' Одоо хөтөлбөрийн талаар товч танилцуулаад, элсэлтээ баталгаажуулах эсэхийг асуу.',
+      };
+    }
+
+    // ─── ЭЕШ шалгах, үнэ тооцох (кодоор) ───────────────────────────────
+    if (name === 'check_eesh_and_price') {
+      const result = evaluateApplicant(input.program, input.scores);
+      if (!result.ok) return { content: result.error, isError: true };
+
+      await saveLead(ctx.psid, {
+        programId: result.program.id,
+        programName: result.program.name,
+        eesh: input.scores,
+        qualified: result.qualified,
+        incentiveLabel: result.incentive.label,
+        annualAfterDiscount: result.annualAfterDiscount,
+        stage: 'eesh_checked',
+      });
+
+      const breakdown = result.groupResults
+        .map(
+          (g) =>
+            `${g.subjects.join('/')} (${g.minScore}+): ` +
+            (g.best ? `${g.best.subject} ${g.best.score} — ${g.met ? 'хангасан' : 'хүрээгүй'}` : 'оноо өгөөгүй'),
+        )
+        .join(' | ');
+
+      return {
+        content:
+          `ТООЦООЛСОН ҮР ДҮН (эдгээр тоог яг хэвээр нь хэрэглэ, өөрөө бүү тооцоол):\n` +
+          `- Шалгалтын задаргаа: ${breakdown}\n` +
+          `- Босго хангасан эсэх: ${result.qualified ? 'ТИЙМ' : 'ҮГҮЙ'}\n` +
+          `- Урамшуулал: ${result.incentive.label} (${result.incentive.reason})\n` +
+          `- Жилийн үндсэн төлбөр: ${formatMnt(result.baseAnnual)}\n` +
+          `- Хөнгөлөлт: ${formatMnt(result.discountAmount)}\n` +
+          `- Төлөх дүн: ${formatMnt(result.annualAfterDiscount)}\n` +
+          `- Суудал баталгаажуулах хураамж: ${formatMnt(result.seatDeposit)}\n\n` +
+          `Хэрэглэгчид урамшуулал, үндсэн үнэ, хөнгөлсөн үнийг товч хэлээд, ` +
+          `суудлаа баталгаажуулах эсэхийг асуу. Энэ бол урьдчилсан тооцоо гэдгийг нэг өгүүлбэрээр дурд.`,
+      };
+    }
+
+    // ─── Холбоо барих мэдээлэл ─────────────────────────────────────────
+    if (name === 'save_contact_info') {
+      await saveLead(ctx.psid, {
+        name: input.full_name,
+        phone: input.phone,
+        stage: 'contact_saved',
+      });
+
+      if (!ctx.offline) {
+        const lead = await getLead(ctx.psid);
+        await notifyAdmins(
+          `📇 Шинэ элсэгч\nНэр: ${input.full_name}\nУтас: ${input.phone}\n` +
+            `Мэргэжил: ${lead.programName ?? '-'}\nУрамшуулал: ${lead.incentiveLabel ?? '-'}`,
+        );
+      }
+
+      return {
+        content:
+          'Нэр, утас бүртгэгдлээ. Одоо суудал баталгаажуулах нэхэмжлэх үүсгэх эсэхийг асуу.',
+      };
+    }
+
+    // ─── QPay нэхэмжлэх ────────────────────────────────────────────────
+    if (name === 'create_seat_invoice') {
+      if (!input.confirmed) {
+        return {
+          content: 'Хэрэглэгч хараахан зөвшөөрөөгүй байна. Эхлээд тодорхой зөвшөөрлийг ав.',
+          isError: true,
+        };
+      }
+
+      const lead = await getLead(ctx.psid);
+      if (!lead.name || !lead.phone) {
+        return {
+          content:
+            'Нэр, утас бүртгэгдээгүй байна. Эхлээд save_contact_info хэрэгслээр бүртгэ.',
+          isError: true,
+        };
+      }
+
+      const senderInvoiceNo = `SEDS-${Date.now()}-${String(ctx.psid).slice(-6)}`;
+      const description = `Суудал баталгаажуулах хураамж — ${lead.programName ?? 'элсэлт'} (${lead.name})`;
+
+      if (!isQpayConfigured()) {
+        await saveLead(ctx.psid, {
+          stage: 'invoice_created',
+          invoice: { senderInvoiceNo, amount: TUITION.seatDeposit, manual: true, createdAt: new Date().toISOString() },
+        });
+        if (!ctx.offline) {
+          await notifyAdmins(
+            `💳 Төлбөрийн хүсэлт (QPay тохируулаагүй)\n${lead.name} / ${lead.phone}\n` +
+              `${lead.programName ?? '-'} — ${formatMnt(TUITION.seatDeposit)}`,
+          );
+        }
+        return {
+          content:
+            'QPay холбогдоогүй тул автомат нэхэмжлэх үүсгэж чадсангүй. Хэрэглэгчид ' +
+            'сургуулийн элсэлтийн албанаас төлбөрийн мэдээлэл авахыг санал болго, ' +
+            'мөн ажилтан удахгүй холбогдоно гэж хэл. Хүсэлт бүртгэгдсэн.',
+        };
+      }
+
+      const invoice = await createInvoice({
+        senderInvoiceNo,
+        receiverCode: lead.phone,
+        amount: TUITION.seatDeposit,
+        description,
+      });
+
+      if (!invoice.ok) {
+        return {
+          content:
+            'Нэхэмжлэх үүсгэхэд алдаа гарлаа. Хэрэглэгчээс уучлалт гуйж, ажилтан ' +
+            'холбогдоно гэж хэл. Дахин оролдох шаардлагагүй.',
+          isError: true,
+        };
+      }
+
+      await saveLead(ctx.psid, {
+        stage: 'invoice_created',
+        invoice: {
+          senderInvoiceNo,
+          invoiceId: invoice.invoiceId,
+          amount: TUITION.seatDeposit,
+          shortUrl: invoice.shortUrl,
+          createdAt: new Date().toISOString(),
+          paidAt: null,
+        },
+      });
+
+      // Callback ирэхэд нэхэмжлэхийг хэрэглэгчтэй нь холбохын тулд
+      await kvSet(
+        `invoice:${senderInvoiceNo}`,
+        { psid: ctx.psid, invoiceId: invoice.invoiceId },
+        30 * 24 * 60 * 60,
+      );
+
+      const links = [invoice.shortUrl, ...(invoice.urls ?? []).slice(0, 3).map((u) => u.link)]
+        .filter(Boolean)
+        .join('\n');
+
+      if (!ctx.offline) {
+        await notifyAdmins(
+          `💳 Нэхэмжлэх үүслээ\n${lead.name} / ${lead.phone}\n` +
+            `${lead.programName ?? '-'} — ${formatMnt(TUITION.seatDeposit)}\n№ ${senderInvoiceNo}`,
+        );
+      }
+
+      return {
+        content:
+          `Нэхэмжлэх амжилттай үүслээ. Дүн: ${formatMnt(TUITION.seatDeposit)}. ` +
+          `Хэрэглэгчид доорх холбоосыг бүтнээр нь дамжуул:\n${links}\n` +
+          `Төлбөр төлсний дараа элсэлтийн алба холбогдоно гэж хэл.`,
+      };
+    }
+
+    // ─── Ажилтан руу шилжүүлэх ─────────────────────────────────────────
+    if (name === 'escalate_to_human') {
+      await saveLead(ctx.psid, { stage: 'escalated' });
       log.info('Хүн рүү шилжүүлэх хүсэлт', { psid: maskPsid(ctx.psid), reason: input.reason });
 
       let handedOver = false;
@@ -118,44 +345,17 @@ export async function executeTool(call, ctx) {
         handedOver = await passThreadControl(ctx.psid, input.summary);
         await setHandedOver(ctx.psid, handedOver);
         await notifyAdmins(
-          `🔔 Шинэ хүсэлт: ${REASON_LABELS[input.reason] ?? input.reason}\n\n${input.summary}\n\n` +
-            (handedOver
-              ? 'Яриа Page Inbox руу шилжсэн.'
-              : 'Анхаар: автоматаар шилжүүлж чадсангүй, Inbox-оос гараар хариулна уу.'),
+          `🔔 ${REASON_LABELS[input.reason] ?? input.reason}\n\n${input.summary}\n\n` +
+            (handedOver ? 'Яриа Page Inbox руу шилжсэн.' : 'Анхаар: гараар хариулна уу.'),
         );
       }
 
       return {
         handedOver,
         content: handedOver
-          ? 'Амжилттай шилжүүллээ. Хэрэглэгчид ажилтан удахгүй хариулна гэдгийг товч мэдэгд.'
-          : 'Хүсэлт бүртгэгдлээ, гэхдээ автоматаар шилжүүлж чадсангүй. ' +
-            'Хэрэглэгчид ажилтан Messenger-ээр эргэн холбогдоно гэдгийг хэлж, ' +
+          ? 'Амжилттай шилжүүллээ. Ажилтан удахгүй хариулна гэдгийг товч мэдэгд.'
+          : 'Хүсэлт бүртгэгдлээ. Ажилтан Messenger-ээр эргэн холбогдоно гэж хэлээд, ' +
             'сургуулийн утсаар шууд холбогдох боломжтойг сануул.',
-      };
-    }
-
-    if (name === 'save_contact_request') {
-      await record('leads', {
-        ts: new Date().toISOString(),
-        psid: ctx.psid,
-        full_name: input.full_name,
-        phone: input.phone,
-        interest: input.interest,
-        note: input.note,
-      });
-      log.info('Холбоо барих хүсэлт бүртгэгдлээ', { psid: maskPsid(ctx.psid) });
-
-      if (!ctx.offline) {
-        await notifyAdmins(
-          `📇 Холбоо барих хүсэлт\nНэр: ${input.full_name}\nУтас: ${input.phone}\n` +
-            `Сонирхол: ${input.interest}\nТэмдэглэл: ${input.note || '-'}`,
-        );
-      }
-
-      return {
-        content:
-          'Хүсэлт амжилттай бүртгэгдлээ. Хэрэглэгчид ажлын өдрүүдэд эргэн холбогдоно гэдгийг товч хэл.',
       };
     }
 
@@ -164,8 +364,10 @@ export async function executeTool(call, ctx) {
     log.error('Хэрэгсэл гүйцэтгэхэд алдаа гарлаа', { name, error: err.message });
     return {
       content:
-        'Техникийн алдаа гарлаа. Хэрэглэгчээс уучлалт гуйж, сургуулийн утсаар шууд холбогдохыг санал болго.',
+        'Техникийн алдаа гарлаа. Хэрэглэгчээс уучлалт гуйж, сургуулийн утсаар холбогдохыг санал болго.',
       isError: true,
     };
   }
 }
+
+export { config };

@@ -139,6 +139,70 @@ export async function kvAppend(listKey, value) {
   }
 }
 
+/** @type {Map<string, Map<string, number>>} индекс: гишүүн -> оноо (timestamp) */
+const memoryIndexes = new Map();
+
+/**
+ * Индекст гишүүн нэмэх/шинэчлэх (Redis: ZADD).
+ * Хамгийн сүүлд өөрчлөгдсөнөөр эрэмбэлэхэд ашиглана.
+ */
+export async function kvIndexAdd(indexKey, member, score = Date.now()) {
+  try {
+    if (kvDriver === 'redis') {
+      await command(['ZADD', indexKey, String(score), String(member)]);
+    } else {
+      const index = memoryIndexes.get(indexKey) ?? new Map();
+      index.set(String(member), score);
+      memoryIndexes.set(indexKey, index);
+    }
+    return true;
+  } catch (err) {
+    log.warn('kvIndexAdd амжилтгүй', { indexKey, error: err.message });
+    return false;
+  }
+}
+
+/**
+ * Индексээс хамгийн сүүлийнхээс нь эхлэн жагсаана (Redis: ZRANGE REV).
+ * @returns {Promise<string[]>}
+ */
+export async function kvIndexList(indexKey, limit = 200) {
+  try {
+    if (kvDriver === 'redis') {
+      const result = await command([
+        'ZRANGE',
+        indexKey,
+        '0',
+        String(Math.max(0, limit - 1)),
+        'REV',
+      ]);
+      return Array.isArray(result) ? result.map(String) : [];
+    }
+    const index = memoryIndexes.get(indexKey);
+    if (!index) return [];
+    return [...index.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([member]) => member);
+  } catch (err) {
+    log.warn('kvIndexList амжилтгүй', { indexKey, error: err.message });
+    return [];
+  }
+}
+
+/** Индексийн нийт гишүүний тоо (Redis: ZCARD) */
+export async function kvIndexCount(indexKey) {
+  try {
+    if (kvDriver === 'redis') {
+      const result = await command(['ZCARD', indexKey]);
+      return Number(result) || 0;
+    }
+    return memoryIndexes.get(indexKey)?.size ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Санах ойн хөтчийн хугацаа дууссан түлхүүрүүдийг цэвэрлэнэ */
 export function pruneMemory() {
   if (kvDriver !== 'memory') return;
