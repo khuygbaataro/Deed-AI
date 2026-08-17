@@ -1,0 +1,19 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+
+# Ажиллах үед үүсэх өгөгдөл (хэрэглэгчийн хувийн мэдээлэл агуулна)
+data/
+
+# Лог
+*.log
+npm-debug.log*
+
+# Систем
+.DS_Store
+Thumbs.db
+
+# Редактор
+.vscode/
+.idea/
