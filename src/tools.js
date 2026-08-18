@@ -11,6 +11,7 @@ import {
   findProgram,
   formatMnt,
   isBankConfigured,
+  overviewImageUrl,
   programImageUrl,
 } from './admissions.js';
 
@@ -27,6 +28,22 @@ const PROGRAM_NAMES = PROGRAMS.map((p) => p.name);
  * доторх кодоор тооцоолж, бэлэн үр дүнг буцаана.
  */
 export const TOOLS = [
+  {
+    name: 'show_program_list',
+    description:
+      'Бүх мэргэжлийг дугаарын хамт харуулсан КАРТ (зураг) илгээнэ. ' +
+      'Хэрэглэгч мэргэжлээ сонгоогүй байж "ямар мэргэжил байдаг вэ?", ' +
+      '"юу сурч болох вэ?" гэх мэтээр асуувал энэ хэрэгслийг дууд. ' +
+      'Картан дээр 6 мэргэжил дугаарлагдсан байгаа тул чи мэргэжлүүдийг ' +
+      'текстээр ДАХИН жагсаах ШААРДЛАГАГҮЙ — зөвхөн дугаараа сонгохыг хүс.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'set_program_interest',
     description:
@@ -184,6 +201,23 @@ export async function executeTool(call, ctx) {
   const { name, input } = call;
 
   try {
+    // ─── Бүх мэргэжлийн карт ───────────────────────────────────────────
+    if (name === 'show_program_list') {
+      let sent = false;
+      if (!ctx.offline) {
+        const overview = overviewImageUrl();
+        if (overview) sent = await sendImage(ctx.psid, overview);
+      }
+      return {
+        content: sent
+          ? 'Бүх мэргэжлийн карт илгээгдлээ. Картан дээр 6 мэргэжил дугаарын хамт ' +
+            'бичээстэй байгаа тул ТЕКСТЭЭР ДАХИН БҮҮ ЖАГСАА. Зөвхөн нэг богино ' +
+            'өгүүлбэрээр сонирхсон мэргэжлийнхээ дугаарыг бичихийг хүс.'
+          : 'Карт илгээж чадсангүй. Мэргэжлүүдийг дугаарын хамт товч жагсаагаад ' +
+            'сонголтыг нь асуу.',
+      };
+    }
+
     // ─── Мэргэжил сонгох ───────────────────────────────────────────────
     if (name === 'set_program_interest') {
       const program = findProgram(input.program);
