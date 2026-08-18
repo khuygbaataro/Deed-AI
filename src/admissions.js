@@ -199,13 +199,20 @@ export const isBankConfigured = () =>
  * файлын хэмжээ 8MB-аас бага, JPG эсвэл PNG байна.
  */
 export const PROGRAM_IMAGES = {
-  'software-2plus2': null, // '/programs/software-2plus2.jpg'
-  software: null,
-  tourism: null,
-  economics: null,
-  translation: null,
-  'area-studies': null,
+  'software-2plus2': '/programs/software-2plus2.png',
+  software: '/programs/software.png',
+  tourism: '/programs/tourism.png',
+  economics: '/programs/economics.png',
+  translation: '/programs/translation.png',
+  'area-studies': '/programs/area-studies.png',
 };
+
+/**
+ * Бүх мэргэжлийг нэг дор харуулах карт.
+ * Ярианы эхэнд илгээнэ — карт дээр "дугаараа бичээрэй" гэж заасан тул
+ * хэрэглэгч 1-6 хүртэлх тоогоор мэргэжлээ сонгоно.
+ */
+export const OVERVIEW_IMAGE = '/programs/all-programs.png';
 
 /**
  * Хөтөлбөрийн зургийн бүтэн хаягийг гаргана.
@@ -214,7 +221,11 @@ export const PROGRAM_IMAGES = {
  * @returns {string|null}
  */
 export function programImageUrl(programId) {
-  const path = PROGRAM_IMAGES[programId];
+  return resolveImageUrl(PROGRAM_IMAGES[programId]);
+}
+
+/** Харьцангуй замыг Messenger уншиж чадах бүтэн https хаяг болгоно */
+function resolveImageUrl(path) {
   if (!path) return null;
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
 
@@ -229,6 +240,11 @@ export function programImageUrl(programId) {
   const root = base.endsWith("/") ? base.slice(0, -1) : base;
   const suffix = path.startsWith("/") ? path : `/${path}`;
   return `${root}${suffix}`;
+}
+
+/** Бүх мэргэжлийн жагсаалтын картын бүтэн хаяг */
+export function overviewImageUrl() {
+  return resolveImageUrl(OVERVIEW_IMAGE);
 }
 
 // ─── Хөтөлбөрүүд ─────────────────────────────────────────────────────────
@@ -425,10 +441,10 @@ export function evaluateApplicant(programIdOrName, scores, options = {}) {
 
 /** Ботод харуулах хөтөлбөрийн жагсаалт (промптод оруулна) */
 export function programListText() {
-  return PROGRAMS.map((p) => {
+  return PROGRAMS.map((p, i) => {
     const groups = examGroupsFor(p)
       .map((g) => `${g.subjects.join(' / ')} — ${g.minScore}+`)
       .join('; ');
-    return `- ${p.name} (код ${p.code})${p.inDemand ? ' [ЭРЭЛТТЭЙ мэргэжил]' : ''}: ЭЕШ ${groups}`;
+    return `${i + 1}. ${p.name} (код ${p.code})${p.inDemand ? ' [ЭРЭЛТТЭЙ мэргэжил]' : ''}: ЭЕШ ${groups}`;
   }).join('\n');
 }

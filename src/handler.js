@@ -2,10 +2,11 @@ import { config } from './config.js';
 import { log, maskPsid } from './logger.js';
 import { generateReply } from './claude.js';
 import { GREETING, PAYLOAD_PROMPTS } from './prompt.js';
-import { getUserProfile, sendSenderAction, sendText } from './messenger.js';
+import { getUserProfile, sendImage, sendSenderAction, sendText } from './messenger.js';
 import { getSession, resetSession, saveSession, setHandedOver } from './sessions.js';
 import { kvAppend, kvClaim, kvDelete, kvDrainList } from './store.js';
 import { checkRateLimit, rateLimitMessage } from './ratelimit.js';
+import { overviewImageUrl } from './admissions.js';
 
 /** Дараалсан мессежийг хүлээж авах завсар (мс) */
 const COALESCE_MS = 2500;
@@ -98,7 +99,7 @@ export async function handleEvent(event) {
     await kvDelete(bufKey(psid));
     await saveSession(psid, { messages: [], handedOver: false, greeted: true });
     await sendSenderAction(psid, 'mark_seen');
-    await sendText(psid, GREETING);
+    await sendGreeting(psid);
     return;
   }
 
@@ -166,6 +167,16 @@ export async function handleEvent(event) {
 }
 
 /**
+ * Мэндчилгээ илгээнэ — текст, дараа нь бүх мэргэжлийн карт.
+ * Карт дээр "дугаараа бичээрэй" гэж заасан тул хэрэглэгч 1-6 гэж хариулна.
+ */
+async function sendGreeting(psid) {
+  await sendText(psid, GREETING);
+  const overview = overviewImageUrl();
+  if (overview) await sendImage(psid, overview);
+}
+
+/**
  * Нэг ээлжид хариулна.
  * @param {string} psid
  * @param {string} userText нэгтгэсэн текст
@@ -179,7 +190,7 @@ async function respondToTurn(psid, userText) {
 
     if (isFirstContact) {
       session.greeted = true;
-      await sendText(psid, GREETING);
+      await sendGreeting(psid);
     }
 
     const profile = isFirstContact ? await getUserProfile(psid) : null;
