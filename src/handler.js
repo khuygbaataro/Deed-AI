@@ -2,11 +2,10 @@ import { config } from './config.js';
 import { log, maskPsid } from './logger.js';
 import { generateReply } from './claude.js';
 import { GREETING, PAYLOAD_PROMPTS } from './prompt.js';
-import { getUserProfile, sendImage, sendSenderAction, sendText } from './messenger.js';
+import { getUserProfile, sendSenderAction, sendText } from './messenger.js';
 import { getSession, resetSession, saveSession, setHandedOver } from './sessions.js';
 import { kvAppend, kvClaim, kvDelete, kvDrainList } from './store.js';
 import { checkRateLimit, rateLimitMessage } from './ratelimit.js';
-import { overviewImageUrl } from './admissions.js';
 
 /** Дараалсан мессежийг хүлээж авах завсар (мс) */
 const COALESCE_MS = 2500;
@@ -167,13 +166,14 @@ export async function handleEvent(event) {
 }
 
 /**
- * Мэндчилгээ илгээнэ — текст, дараа нь бүх мэргэжлийн карт.
- * Карт дээр "дугаараа бичээрэй" гэж заасан тул хэрэглэгч 1-6 гэж хариулна.
+ * Мэндчилгээ илгээнэ.
+ *
+ * Мэргэжлийн жагсаалтын картыг ЭНД илгээхгүй — түүнийг show_program_list
+ * хэрэгсэл хариуцна. Хоёр газраас илгээвэл карт давхарлан очих эрсдэлтэй,
+ * мөн хэрэглэгч мэргэжлээ шууд нэрлэсэн үед жагсаалт нь илүүц болно.
  */
 async function sendGreeting(psid) {
   await sendText(psid, GREETING);
-  const overview = overviewImageUrl();
-  if (overview) await sendImage(psid, overview);
 }
 
 /**

@@ -273,6 +273,20 @@ export async function executeTool(call, ctx) {
       const result = evaluateApplicant(input.program, input.scores, profile);
       if (!result.ok) return { content: result.error, isError: true };
 
+      // Оноо дутуу бол хөнгөлөлт ЗАРЛАХГҮЙ — дутуу хичээлийг нь асууна.
+      // Эс бөгөөс 100% эрхтэй элсэгчид 20% гэж буруу хэлэх эрсдэлтэй.
+      if (result.incomplete) {
+        const ask = result.missingSubjects.join(' эсвэл ');
+        return {
+          content: [
+            'МЭДЭЭЛЭЛ ДУТУУ БАЙНА — хөнгөлөлтийг хараахан тооцоогүй.',
+            `Дараах хичээлийн оноог хэрэглэгчээс асуу: ${ask}.`,
+            'Хөнгөлөлтийн талаар ЮУ Ч БҮҮ ХЭЛ — зөвхөн дутуу оноог эелдгээр асуу.',
+            'Хэрэв тухайн хичээлээр ЭЕШ өгөөгүй гэвэл оноог нь 0 гэж оруулаад',
+            'энэ хэрэгслийг дахин дууд.',
+          ].join(' '),
+        };
+      }
       await saveLead(ctx.psid, {
         programId: result.program.id,
         programName: result.program.name,

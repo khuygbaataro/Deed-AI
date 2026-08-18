@@ -383,6 +383,13 @@ export function evaluateApplicant(programIdOrName, scores, options = {}) {
     };
   });
 
+  // ⚠️ "Оноо өгөөгүй" ба "босго хангаагүй" хоёрыг ЯЛГАНА.
+  // Хэрэглэгч зарим хичээлийн оноогоо хэлээгүй байхад хангаагүй гэж үзвэл
+  // 100% эрхтэй элсэгчид 20% зарлаж, буруу мэдээлэл өгөх эрсдэлтэй.
+  const missingGroups = groupResults.filter((g) => !g.best);
+  const incomplete = normalized.length > 0 && missingGroups.length > 0;
+  const missingSubjects = missingGroups.flatMap((g) => g.subjects);
+
   const qualified =
     EXAM_RULE_MODE === 'any'
       ? groupResults.some((g) => g.met)
@@ -424,6 +431,8 @@ export function evaluateApplicant(programIdOrName, scores, options = {}) {
     ok: true,
     program,
     qualified,
+    incomplete,
+    missingSubjects,
     groupResults,
     incentive,
     eligibleIncentives: eligible,

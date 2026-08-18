@@ -37,10 +37,16 @@ const STAGE_ORDER = [
   'paid',
 ];
 
+/** Шилжүүлсний дараа ч үргэлжилж болох шатууд — тайлан зөв гарахын тулд */
+const OVERRIDES_ESCALATED = ['invoice_created', 'paid'];
+
 function mergeStage(current, next) {
   if (!next) return current;
-  if (next === 'escalated') return next; // шилжүүлэлт бүх шатнаас дээгүүр
-  if (current === 'escalated') return current;
+  if (next === 'escalated') return next; // шилжүүлэлт бусад шатнаас дээгүүр
+  // Ажилтан руу шилжсэн ч төлбөр хийвэл тэр нь илүү чухал мэдээлэл
+  if (current === 'escalated') {
+    return OVERRIDES_ESCALATED.includes(next) ? next : current;
+  }
   const a = STAGE_ORDER.indexOf(current);
   const b = STAGE_ORDER.indexOf(next);
   return b > a ? next : current;
