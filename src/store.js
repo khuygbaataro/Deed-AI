@@ -217,6 +217,23 @@ export function pruneMemory() {
   }
 }
 
+/**
+ * Redis үнэхээр хариулж байгаа эсэхийг шалгана.
+ * driver === "redis" гэдэг нь зөвхөн хувьсагч байгааг л хэлнэ — токен буруу
+ * байвал бүх үйлдэл чимээгүйхэн унаж, бот санах ойгүй мэт ажиллана.
+ * @returns {Promise<{ok: boolean, latencyMs?: number, error?: string}>}
+ */
+export async function kvPing() {
+  if (kvDriver !== "redis") return { ok: true, driver: "memory" };
+  const started = Date.now();
+  try {
+    const result = await command(["PING"]);
+    return { ok: String(result).toUpperCase() === "PONG", latencyMs: Date.now() - started };
+  } catch (err) {
+    return { ok: false, error: err.message.slice(0, 120) };
+  }
+}
+
 export function storeStats() {
   return kvDriver === 'memory' ? { driver: 'memory', keys: memory.size } : { driver: 'redis' };
 }
