@@ -3,7 +3,7 @@
  * Маршрут: /api/admin  (vercel.json-оор /admin)
  *
  * Хамгаалалт: HTTP Basic auth. Хэрэглэгчийн нэр дурын, нууц үг = ADMIN_TOKEN.
- * ADMIN_TOKEN тохируулаагүй бол хуудас огт нээгдэхгүй (404).
+ * ADMIN_TOKEN тохируулаагүй бол өгөгдөл харагдахгүй — оронд нь тохируулах заавар гарна.
  */
 import { countLeads, listLeads, STAGES } from '../src/leads.js';
 import { TUITION, formatMnt } from '../src/admissions.js';
@@ -24,6 +24,42 @@ function esc(value) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+
+/** ADMIN_TOKEN тохируулаагүй үед юу хийхийг тайлбарлана */
+function setupPage() {
+  return new Response(
+    `<!doctype html><html lang="mn"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex"><title>Тохируулга шаардлагатай</title>
+<style>
+:root{color-scheme:light dark}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:34rem;margin:4rem auto;padding:0 1.25rem;line-height:1.65}
+h1{font-size:1.25rem}code{background:#8882;padding:.15em .4em;border-radius:4px}
+ol{padding-left:1.2rem}li{margin:.5rem 0}
+.note{background:#8881;border-left:3px solid #8884;padding:.75rem 1rem;border-radius:0 6px 6px 0;font-size:.9rem;margin-top:1.5rem}
+</style></head><body>
+<h1>🔒 Хяналтын самбар хаалттай байна</h1>
+<p>Элсэгчдийн жагсаалт хувийн мэдээлэл агуулдаг тул нууц үг тохируулах хүртэл
+энэ хуудас нээгдэхгүй.</p>
+<ol>
+  <li>Vercel → төслийн <b>Settings → Environment Variables</b> руу орно.</li>
+  <li><code>ADMIN_TOKEN</code> нэртэй хувьсагч нэмж, өөрийн сонгосон
+      <b>хүчтэй нууц үгийг</b> утга болгон бичнэ. Environment: Production.</li>
+  <li>Хадгалаад дахин deploy хийнэ: <code>vercel deploy --prod --yes</code></li>
+  <li>Энэ хуудсыг дахин нээхэд хөтөч нэр/нууц үг асууна.
+      Нэрийг дурын үг бичээд, нууц үгэнд <code>ADMIN_TOKEN</code>-оо оруулна.</li>
+</ol>
+<div class="note">Нууц үгээ бусадтай бүү хуваалц. Энэ хуудас элсэгчдийн нэр,
+утас, ЭЕШ-ийн оноог харуулна.</div>
+</body></html>`,
+    { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } },
+  );
+}
+
+/** Зөвхөн холбоо барих мэдээлэлтэй болсон (бодитоор бүртгэгдсэн) элсэгчид */
+const REGISTERED_STAGES = ['contact_saved', 'invoice_created', 'paid'];
+const isRegistered = (lead) => REGISTERED_STAGES.includes(lead.stage);
 
 function unauthorized() {
   return new Response('Нэвтрэх шаардлагатай', {
@@ -70,7 +106,7 @@ function toCsv(leads) {
   return [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\n');
 }
 
-function renderPage(leads, total) {
+function renderPage(leads, total, filter, registeredCount) {
   const stageCounts = {};
   for (const l of leads) stageCounts[l.stage] = (stageCounts[l.stage] ?? 0) + 1;
 
@@ -137,11 +173,18 @@ tr:last-child td{border-bottom:none}
 .s-escalated{background:#f59e0b33}.s-eesh_checked{background:#a855f733}
 .ok{color:#16a34a;font-weight:600}.pending{color:#ca8a04}
 .empty{padding:3rem 1rem;text-align:center;color:var(--muted)}
+.tabs{display:flex;gap:.5rem;margin-bottom:1.25rem}
+.tab{font-size:.85rem;text-decoration:none;color:inherit;border:1px solid var(--b);padding:.35rem .8rem;border-radius:99px}
+.tab.on{background:#8882;font-weight:600}
 a.btn{display:inline-block;margin-top:1rem;font-size:.85rem;text-decoration:none;border:1px solid var(--b);padding:.4rem .8rem;border-radius:8px;color:inherit}
 </style></head><body>
 <h1>Элсэгчдийн бүртгэл</h1>
-<div class="sub">Нийт ${total} бүртгэл · сүүлийн ${leads.length}-г харуулж байна ·
+<div class="sub">Нийт ${total} яриа · <b>${registeredCount} нь нэр, утсаа өгсөн</b> ·
   үндсэн төлбөр ${formatMnt(TUITION.baseAnnual)} · хураамж ${formatMnt(TUITION.seatDeposit)}</div>
+<div class="tabs">
+  <a class="tab ${filter === 'registered' ? '' : 'on'}" href="/api/admin">Бүгд (${total})</a>
+  <a class="tab ${filter === 'registered' ? 'on' : ''}" href="/api/admin?filter=registered">✅ Бүртгэгдсэн (${registeredCount})</a>
+</div>
 ${warning}
 <div class="cards">${cards}</div>
 <div class="wrap">
@@ -151,22 +194,24 @@ ${
         <th>Огноо</th><th>Шат</th><th>Нэр</th><th>Утас</th><th>Мэргэжил</th>
         <th>ЭЕШ</th><th>Босго</th><th>Урамшуулал</th><th>Төлөх дүн</th><th>Төлбөр</th>
       </tr></thead><tbody>${rows}</tbody></table>`
-    : '<div class="empty">Одоогоор бүртгэл алга. Messenger-ээр яриа эхлэхэд энд харагдана.</div>'
+    : `<div class="empty">${filter === 'registered' ? 'Нэр, утсаа өгсөн элсэгч хараахан алга.' : 'Одоогоор яриа алга. Messenger-ээр хэн нэгэн бичихэд энд харагдана.'}</div>`
 }
 </div>
-<a class="btn" href="/api/admin?format=csv">⬇ CSV татах</a>
+<a class="btn" href="/api/admin?format=csv${filter === 'registered' ? '&filter=registered' : ''}">⬇ CSV татах</a>
 </body></html>`;
 }
 
 export async function GET(request) {
   const token = adminToken();
-  if (!token) return new Response('Not Found', { status: 404 });
+  if (!token) return setupPage();
   if (!checkAuth(request, token)) return unauthorized();
 
   const url = new URL(request.url);
   const limit = Math.min(1000, Number(url.searchParams.get('limit')) || 200);
-  const leads = await listLeads(limit);
+  const all = await listLeads(limit);
   const total = await countLeads();
+  const filter = url.searchParams.get('filter');
+  const leads = filter === 'registered' ? all.filter(isRegistered) : all;
 
   if (url.searchParams.get('format') === 'csv') {
     return new Response(`﻿${toCsv(leads)}`, {
@@ -178,7 +223,7 @@ export async function GET(request) {
     });
   }
 
-  return new Response(renderPage(leads, total), {
+  return new Response(renderPage(leads, total, filter, all.filter(isRegistered).length), {
     status: 200,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   });
