@@ -105,8 +105,9 @@ export const TOOLS = [
   {
     name: 'save_contact_info',
     description:
-      'Хэрэглэгчийн нэр, утасны дугаарыг бүртгэнэ. Суудал баталгаажуулахын өмнө ' +
-      'заавал шаардлагатай. Хэрэглэгч өөрөө өгсөн эсвэл өгөхийг зөвшөөрсөн үед л дуудна.',
+      'Хэрэглэгчийн нэр, утасны дугаарыг бүртгэнэ. Хоёр тохиолдолд хэрэглэнэ: ' +
+      '(1) суудал баталгаажуулахын өмнө, (2) чиний мэдэхгүй асуултад ажилтан эргэж ' +
+      'хариулахаар утсыг нь хадгалахад. Хэрэглэгч өөрөө өгсөн эсвэл зөвшөөрсөн үед л дуудна.',
     strict: true,
     input_schema: {
       type: 'object',
@@ -321,6 +322,8 @@ export async function executeTool(call, ctx) {
         ? `Банк: ${BANK_ACCOUNT.bankName}
 Данс: ${BANK_ACCOUNT.accountNumber}
 ` +
+          (BANK_ACCOUNT.iban ? `IBAN: ${BANK_ACCOUNT.iban}
+` : '') +
           `Хүлээн авагч: ${BANK_ACCOUNT.accountName}
 Дүн: ${formatMnt(TUITION.seatDeposit)}
 ` +

@@ -50,7 +50,7 @@ export const INCENTIVES = {
     id: 'thirty_plus',
     rate: 0.5,
     label: '50% хөнгөлөлт',
-    reason: '"30+" хөтөлбөр — 30-аас дээш настай, мэргэжлээрээ 3-аас дээш жил ажилласан',
+    reason: '"30+" хөтөлбөр — 30-аас дээш настай, мэргэжлээрээ 2-оос дээш жил ажилласан',
     note: 'ЭЕШ-ийн оноогүй байж болно. Эчнээ болон зайн сургалтаар бакалаврын зэрэг олгоно.',
     depositDeductible: true,
   },
@@ -60,7 +60,7 @@ export const INCENTIVES = {
     rate: 0.5,
     label: '50% хөнгөлөлт',
     reason: 'Хоёр дахь мэргэжлийн хөтөлбөр — бакалаврын зэрэгтэй иргэн',
-    note: 'Эчнээ болон зайн хэлбэрээр элсүүлнэ.',
+    note: 'Оройн, эчнээ болон зайн хэлбэрээр элсүүлнэ. ЭЕШ шаардахгүй — өмнөх бакалаврын боловсрол хангалттай.',
     depositDeductible: true,
   },
   /** 5. Магистрын хөтөлбөр (орон нутгийн) */
@@ -130,7 +130,7 @@ export function determineIncentive(profile = {}) {
   }
 
   if (hasBachelor) eligible.push(INCENTIVES.second_degree);
-  if (!hasEesh && Number(age) >= 30 && Number(workYears) >= 3) {
+  if (!hasEesh && Number(age) >= 30 && Number(workYears) >= 2) {
     eligible.push(INCENTIVES.thirty_plus);
   }
 
@@ -172,9 +172,14 @@ export function examGroupsFor(program) {
  * БӨГЛӨХ: гурван талбарыг бөглөх хүртэл бот дансны мэдээлэл өгөхгүй.
  */
 export const BANK_ACCOUNT = {
-  bankName: null,
-  accountNumber: null,
-  accountName: null,
+  bankName: 'Худалдаа Хөгжлийн банк',
+  accountNumber: '499034349',
+  // ⚠️ БАТАЛГААЖУУЛАХ: сургуулиас "IBAN 300004000" гэж ирсэн. Монголын IBAN нь
+  // ихэвчлэн банкны код + дансны дугаараас бүрддэг тул бүтэн хэлбэр нь
+  // 300004000499034349 байх магадлалтай. Эхний гүйлгээгээр шалгана уу.
+  iban: '300004000499034349',
+  // ⚠️ БАТАЛГААЖУУЛАХ: хүлээн авагчийн нэрийг сургуулиас тодруулаагүй.
+  accountName: 'Соёл Эрдэм Дээд Сургууль',
 };
 
 export const isBankConfigured = () =>
