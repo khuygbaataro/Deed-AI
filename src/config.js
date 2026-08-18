@@ -15,7 +15,9 @@ const num = (v, dflt) => {
  */
 const str = (v, dflt = undefined) => {
   if (typeof v !== 'string') return dflt;
-  const trimmed = v.trim();
+  // Зай, мөр таслалт, мөн бүсэлсэн хашилтыг хасна — .env эсвэл вэб формоос
+  // хуулахад хашилттай орж ирвэл утга чимээгүйхэн таарахгүй болдог
+  const trimmed = v.trim().replace(/^["']|["']$/g, '').trim();
   return trimmed === '' ? dflt : trimmed;
 };
 

@@ -12,7 +12,12 @@
 import { log } from './logger.js';
 
 // Орчны хувьсагчийн үл үзэгдэх зайг цэвэрлэнэ (config.js-тэй ижил шалтгаанаар)
-const clean = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
+const clean = (v) => {
+  if (typeof v !== 'string') return null;
+  // Зай, мөр таслалт, бүсэлсэн хашилтыг хасна ("https://..." гэж хуулсан тохиолдол)
+  const trimmed = v.trim().replace(/^["']|["']$/g, '').trim();
+  return trimmed === '' ? null : trimmed;
+};
 
 const url = clean(process.env.KV_REST_API_URL) || clean(process.env.UPSTASH_REDIS_REST_URL);
 const token = clean(process.env.KV_REST_API_TOKEN) || clean(process.env.UPSTASH_REDIS_REST_TOKEN);
