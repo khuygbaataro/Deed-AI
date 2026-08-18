@@ -1,6 +1,6 @@
 import { config } from './config.js';
 import { log, maskPsid } from './logger.js';
-import { notifyAdmins, passThreadControl } from './messenger.js';
+import { notifyAdmins, passThreadControl, sendImage } from './messenger.js';
 import { setHandedOver } from './sessions.js';
 import { getLead, saveLead } from './leads.js';
 import {
@@ -11,7 +11,9 @@ import {
   findProgram,
   formatMnt,
   isBankConfigured,
+  programImageUrl,
 } from './admissions.js';
+
 import { createInvoice, isQpayConfigured } from './qpay.js';
 import { kvSet } from './store.js';
 
@@ -194,6 +196,12 @@ export async function executeTool(call, ctx) {
         programName: program.name,
         stage: 'program_selected',
       });
+
+      // Танилцуулга зураг байвал текстийн өмнө илгээнэ
+      if (!ctx.offline) {
+        const image = programImageUrl(program.id);
+        if (image) await sendImage(ctx.psid, image);
+      }
 
       const requirements = program.examGroups
         .map((g) => `${g.subjects.join(' эсвэл ')} — ${g.minScore}+ оноо`)

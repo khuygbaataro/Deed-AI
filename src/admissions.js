@@ -185,6 +185,52 @@ export const BANK_ACCOUNT = {
 export const isBankConfigured = () =>
   Boolean(BANK_ACCOUNT.bankName && BANK_ACCOUNT.accountNumber && BANK_ACCOUNT.accountName);
 
+// ─── Хөтөлбөрийн танилцуулга зураг ──────────────────────────────────────
+/**
+ * Хөтөлбөр бүрийн танилцуулга зураг.
+ *
+ * Зургийг public/programs/ хавтсанд хийхэд Vercel автоматаар нийтэлнэ.
+ * Жишээ: public/programs/software.jpg -> /programs/software.jpg
+ *
+ * Утга нь null бол бот тухайн хөтөлбөрт зураг илгээхгүй, зөвхөн текстээр
+ * танилцуулна. Зураг нэмэхэд энд замыг нь бичихэд л хангалттай.
+ *
+ * Санамж: Messenger-т 1200x628 эсвэл 1080x1080 хэмжээ тохиромжтой,
+ * файлын хэмжээ 8MB-аас бага, JPG эсвэл PNG байна.
+ */
+export const PROGRAM_IMAGES = {
+  'software-2plus2': null, // '/programs/software-2plus2.jpg'
+  software: null,
+  tourism: null,
+  economics: null,
+  translation: null,
+  'area-studies': null,
+};
+
+/**
+ * Хөтөлбөрийн зургийн бүтэн хаягийг гаргана.
+ * Messenger гадны системээс татдаг тул заавал абсолют https хаяг байх ёстой.
+ * @param {string} programId
+ * @returns {string|null}
+ */
+export function programImageUrl(programId) {
+  const path = PROGRAM_IMAGES[programId];
+  if (!path) return null;
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+
+  const base =
+    process.env.PUBLIC_BASE_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : null) ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+
+  if (!base) return null;
+  const root = base.endsWith("/") ? base.slice(0, -1) : base;
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${root}${suffix}`;
+}
+
 // ─── Хөтөлбөрүүд ─────────────────────────────────────────────────────────
 /**
  * examGroups: тушаалын хүснэгтийн ЭЕШ багана бүр нэг бүлэг.

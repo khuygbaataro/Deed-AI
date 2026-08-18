@@ -104,6 +104,34 @@ export async function sendText(psid, text, quickReplies) {
   log.info('Мессеж илгээлээ', { psid: maskPsid(psid), parts: parts.length });
 }
 
+/**
+ * Зураг илгээх (URL-ээр).
+ * Facebook зургийг эхний удаад татаж кэшлэдэг тул дараагийн илгээлт шуурхай болно.
+ * @param {string} psid
+ * @param {string} url нийтэд нээлттэй https хаяг
+ */
+export async function sendImage(psid, url) {
+  if (!url) return false;
+  try {
+    await graphPost('me/messages', {
+      recipient: { id: psid },
+      messaging_type: 'RESPONSE',
+      message: {
+        attachment: {
+          type: 'image',
+          payload: { url, is_reusable: true },
+        },
+      },
+    });
+    log.info('Зураг илгээлээ', { psid: maskPsid(psid) });
+    return true;
+  } catch (err) {
+    // Зураг явахгүй байсан ч яриа үргэлжлэх ёстой
+    log.warn('Зураг илгээж чадсангүй', { psid: maskPsid(psid), url, error: err.message });
+    return false;
+  }
+}
+
 /** Хэрэглэгчийн нэрийг авах (эрх байхгүй бол null буцаана) */
 export async function getUserProfile(psid) {
   if (!config.fb.pageAccessToken) return null;
