@@ -3,7 +3,15 @@ import { log, maskPsid } from './logger.js';
 import { notifyAdmins, passThreadControl } from './messenger.js';
 import { setHandedOver } from './sessions.js';
 import { getLead, saveLead } from './leads.js';
-import { PROGRAMS, TUITION, evaluateApplicant, findProgram, formatMnt } from './admissions.js';
+import {
+  BANK_ACCOUNT,
+  PROGRAMS,
+  TUITION,
+  evaluateApplicant,
+  findProgram,
+  formatMnt,
+  isBankConfigured,
+} from './admissions.js';
 import { createInvoice, isQpayConfigured } from './qpay.js';
 import { kvSet } from './store.js';
 
@@ -113,9 +121,9 @@ export const TOOLS = [
   {
     name: 'create_seat_invoice',
     description:
-      `Суудал баталгаажуулах ${formatMnt(TUITION.seatDeposit)} хураамжийн QPay нэхэмжлэх ` +
-      'үүсгэнэ. Зөвхөн хэрэглэгч суудлаа баталгаажуулахыг ТОДОРХОЙ зөвшөөрсний дараа дуудна. ' +
-      'Өмнө нь нэр, утас бүртгэгдсэн байх ёстой.',
+      `Суудал баталгаажуулах ${formatMnt(TUITION.seatDeposit)} хураамжийн төлбөрийн ` +
+      'мэдээллийг (банкны данс эсвэл QPay нэхэмжлэх) бэлтгэнэ. Зөвхөн хэрэглэгч суудлаа ' +
+      'баталгаажуулахыг ТОДОРХОЙ зөвшөөрсний дараа дуудна. Өмнө нь нэр, утас бүртгэгдсэн байх ёстой.',
     strict: true,
     input_schema: {
       type: 'object',
@@ -308,6 +316,17 @@ export async function executeTool(call, ctx) {
       const senderInvoiceNo = `SEDS-${Date.now()}-${String(ctx.psid).slice(-6)}`;
       const description = `Суудал баталгаажуулах хураамж — ${lead.programName ?? 'элсэлт'} (${lead.name})`;
 
+      // Банкны шилжүүлэг — гүйлгээний утга нь элсэгчийн нэр
+      const bankBlock = isBankConfigured()
+        ? `Банк: ${BANK_ACCOUNT.bankName}
+Данс: ${BANK_ACCOUNT.accountNumber}
+` +
+          `Хүлээн авагч: ${BANK_ACCOUNT.accountName}
+Дүн: ${formatMnt(TUITION.seatDeposit)}
+` +
+          `Гүйлгээний утга: ${lead.name}`
+        : null;
+
       if (!isQpayConfigured()) {
         await saveLead(ctx.psid, {
           stage: 'invoice_created',
@@ -319,11 +338,26 @@ export async function executeTool(call, ctx) {
               `${lead.programName ?? '-'} — ${formatMnt(TUITION.seatDeposit)}`,
           );
         }
+        if (bankBlock) {
+          return {
+            content:
+              `Төлбөрийн мэдээллийг хэрэглэгчид доорх байдлаар БҮТНЭЭР нь дамжуул:
+
+` +
+              `${bankBlock}
+
+` +
+              `Гүйлгээний утгад элсэгчийн нэрийг ЗААВАЛ бичих ёстойг онцлон хэл — ` +
+              `үүгээр төлбөрийг тухайн хүүхэдтэй тулгана. Төлсний дараа баримтаа ` +
+              `энэ чатад илгээхийг хүс.`,
+          };
+        }
+
         return {
           content:
-            'QPay холбогдоогүй тул автомат нэхэмжлэх үүсгэж чадсангүй. Хэрэглэгчид ' +
-            'сургуулийн элсэлтийн албанаас төлбөрийн мэдээлэл авахыг санал болго, ' +
-            'мөн ажилтан удахгүй холбогдоно гэж хэл. Хүсэлт бүртгэгдсэн.',
+            'Төлбөрийн суваг хараахан тохируулаагүй байна. Хэрэглэгчид элсэлтийн ' +
+            'албанаас төлбөрийн мэдээлэл авахыг санал болгоод, ажилтан удахгүй ' +
+            'холбогдоно гэж хэл. Хүсэлт бүртгэгдсэн.',
         };
       }
 

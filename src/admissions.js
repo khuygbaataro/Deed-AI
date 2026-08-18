@@ -14,7 +14,7 @@ export const TUITION = {
   /** Жилийн үндсэн сургалтын төлбөр (₮) */
   baseAnnual: 5_500_000,
   /** Суудал баталгаажуулах хураамж — хөнгөлөлтөөс үл хамааран бүгд төлнө (₮) */
-  seatDeposit: 300_000,
+  seatDeposit: 500_000,
   currency: 'MNT',
 };
 
@@ -22,7 +22,7 @@ export const TUITION = {
 /**
  * Эх сурвалж: 2026-2027 оны элсэлтийн "Тэтгэлэг, хөнгөлөлтийн бодлого" зурагт хуудас.
  *
- * depositDeductible — 300,000₮ суудлын хураамж сургалтын төлбөрөөс хасагдах эсэх:
+ * depositDeductible — суудлын хураамж сургалтын төлбөрөөс хасагдах эсэх:
  *   false → хураамж нь төлбөрөөс ТУСДАА (100% хөнгөлөлтөд хасах төлбөр байхгүй)
  *   true  → хураамж нь ХӨНГӨЛСӨН дүнгээс хасагдана
  */
@@ -35,6 +35,15 @@ export const INCENTIVES = {
     reason: 'Орон нутгаас элсэж, ЭЕШ-ийн босго онооны шаардлагыг хангасан',
     note: 'Бакалаврын бүх хөтөлбөрт хамаарна. 2026-2027 оны хичээлийн жилийн төлбөр.',
     depositDeductible: false,
+  },
+  /** Улаанбаатарын элсэгчид, ЭЕШ-ийн босго хангасан */
+  urban_half: {
+    id: 'urban_half',
+    rate: 0.5,
+    label: '50% хөнгөлөлт',
+    reason: 'Улаанбаатараас элсэж, ЭЕШ-ийн босго онооны шаардлагыг хангасан',
+    note: '2026-2027 оны хичээлийн жилийн төлбөр.',
+    depositDeductible: true,
   },
   /** 3. "30+" хөтөлбөр */
   thirty_plus: {
@@ -114,7 +123,9 @@ export function determineIncentive(profile = {}) {
   if (level === 'master') {
     if (isRural) eligible.push(INCENTIVES.master_rural);
   } else {
-    if (isRural && meetsEesh) eligible.push(INCENTIVES.rural_full);
+    if (meetsEesh) {
+      eligible.push(isRural ? INCENTIVES.rural_full : INCENTIVES.urban_half);
+    }
     if (!meetsEesh) eligible.push(INCENTIVES.prep_class);
   }
 
@@ -138,6 +149,23 @@ export function determineIncentive(profile = {}) {
  * комиссоос баталгаажуулна уу. Одоогоор 'all' гэж үзсэн.
  */
 export const EXAM_RULE_MODE = 'all';
+
+// ─── Төлбөр хүлээн авах данс ────────────────────────────────────────────
+/**
+ * Суудлын хураамжийг банкны шилжүүлгээр хүлээн авах мэдээлэл.
+ * Гүйлгээний утгад ЭЛСЭГЧИЙН БҮТЭН НЭРИЙГ бичнэ — үүгээр төлбөрийг
+ * тухайн хүүхэдтэй тулгана.
+ *
+ * БӨГЛӨХ: гурван талбарыг бөглөх хүртэл бот дансны мэдээлэл өгөхгүй.
+ */
+export const BANK_ACCOUNT = {
+  bankName: null,
+  accountNumber: null,
+  accountName: null,
+};
+
+export const isBankConfigured = () =>
+  Boolean(BANK_ACCOUNT.bankName && BANK_ACCOUNT.accountNumber && BANK_ACCOUNT.accountName);
 
 // ─── Хөтөлбөрүүд ─────────────────────────────────────────────────────────
 /**
