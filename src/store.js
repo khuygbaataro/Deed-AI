@@ -144,6 +144,65 @@ export async function kvAppend(listKey, value) {
   }
 }
 
+
+/**
+ * Тоолуурыг нэмэгдүүлж, эхний удаад хугацаа тавина (Redis: INCR + EXPIRE).
+ * Хурдны хязгаарлалтад ашиглана.
+ * @returns {Promise<number>} шинэ утга
+ */
+export async function kvIncr(key, ttlSeconds) {
+  try {
+    if (kvDriver === 'redis') {
+      const count = Number(await command(['INCR', key])) || 0;
+      if (count === 1) await command(['EXPIRE', key, String(Math.round(ttlSeconds))]);
+      return count;
+    }
+    const current = Number(memoryGet(key) ?? 0) + 1;
+    const existing = memory.get(key);
+    memory.set(key, {
+      value: String(current),
+      expiresAt: current === 1 || !existing ? Date.now() + ttlSeconds * 1000 : existing.expiresAt,
+    });
+    return current;
+  } catch (err) {
+    log.warn('kvIncr амжилтгүй', { key, error: err.message });
+    return 0;
+  }
+}
+
+/**
+ * Жагсаалтыг бүтнээр нь уншаад цэвэрлэнэ (Redis: LRANGE + DEL).
+ * Хэрэглэгчийн дараалсан мессежүүдийг нэг дор авахад ашиглана.
+ * @returns {Promise<any[]>}
+ */
+export async function kvDrainList(listKey) {
+  try {
+    if (kvDriver === 'redis') {
+      const items = await command(['LRANGE', listKey, '0', '-1']);
+      await command(['DEL', listKey]);
+      return (Array.isArray(items) ? items : []).map((raw) => {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return raw;
+        }
+      });
+    }
+    const list = memoryLists.get(listKey) ?? [];
+    memoryLists.delete(listKey);
+    return list.map((raw) => {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    });
+  } catch (err) {
+    log.warn('kvDrainList амжилтгүй', { listKey, error: err.message });
+    return [];
+  }
+}
+
 /** @type {Map<string, Map<string, number>>} индекс: гишүүн -> оноо (timestamp) */
 const memoryIndexes = new Map();
 

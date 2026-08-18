@@ -1,10 +1,21 @@
 import { config } from './config.js';
 import { log, maskPsid } from './logger.js';
 import { generateReply } from './claude.js';
-import { GREETING, PAYLOAD_PROMPTS, QUICK_REPLIES } from './prompt.js';
+import { GREETING, PAYLOAD_PROMPTS } from './prompt.js';
 import { getUserProfile, sendSenderAction, sendText } from './messenger.js';
 import { getSession, resetSession, saveSession, setHandedOver } from './sessions.js';
-import { kvClaim } from './store.js';
+import { kvAppend, kvClaim, kvDelete, kvDrainList } from './store.js';
+import { checkRateLimit, rateLimitMessage } from './ratelimit.js';
+
+/** Дараалсан мессежийг хүлээж авах завсар (мс) */
+const COALESCE_MS = 2500;
+/** Нэг дуудлагад хамгийн ихдээ хэдэн ээлж боловсруулах вэ (зардлын хязгаар) */
+const MAX_ROUNDS = 3;
+
+const bufKey = (psid) => `buf:${psid}`;
+const turnKey = (psid) => `turn:${psid}`;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Webhook баталгаажуулалт (Facebook GET хүсэлт).
@@ -81,12 +92,13 @@ export async function handleEvent(event) {
 
   const payload = event.postback?.payload ?? event.message?.quick_reply?.payload ?? null;
 
-  // "Эхлэх" / "Дахин эхлэх" товч
+  // "Эхлэх" / "Дахин эхлэх" товч — нэгтгэлийг тойрч шууд ажиллана
   if (payload === 'GET_STARTED' || payload === 'RESTART') {
     await resetSession(psid);
+    await kvDelete(bufKey(psid));
     await saveSession(psid, { messages: [], handedOver: false, greeted: true });
     await sendSenderAction(psid, 'mark_seen');
-    await sendText(psid, GREETING, QUICK_REPLIES);
+    await sendText(psid, GREETING);
     return;
   }
 
@@ -97,13 +109,19 @@ export async function handleEvent(event) {
   if (!userText) {
     if (event.message?.attachments?.length) {
       await sendSenderAction(psid, 'mark_seen');
-      await sendText(
-        psid,
-        'Одоогоор би зөвхөн бичсэн текстийг ойлгодог. Асуултаа бичээд илгээнэ үү. 🙂',
-        QUICK_REPLIES,
-      );
+      await sendText(psid, 'Одоогоор би зөвхөн бичсэн текстийг ойлгодог. Асуултаа бичээд илгээнэ үү.');
     }
     return;
+  }
+
+  // ─── Спам хамгаалалт: хурдны хязгаар ───────────────────────────────
+  const rate = await checkRateLimit(psid);
+  if (!rate.allowed) {
+    if (rate.warn) {
+      await sendSenderAction(psid, 'mark_seen');
+      await sendText(psid, rateLimitMessage(rate.scope));
+    }
+    return; // Claude руу огт хандахгүй
   }
 
   const session = await getSession(psid);
@@ -114,11 +132,51 @@ export async function handleEvent(event) {
     return;
   }
 
-  await sendSenderAction(psid, 'mark_seen');
+  // ─── Спам хамгаалалт: дараалсан мессежийг нэгтгэх ──────────────────
+  // Мессежийг эхлээд буферт хийнэ. Дараа нь зөвхөн НЭГ дуудлага "эзэн"
+  // болж, богино завсрын дараа буферийг бүтнээр нь авч ганц удаа хариулна.
+  // Ингэснээр 10 мессеж = 10 биш, 1 Claude дуудлага болно.
+  await kvAppend(bufKey(psid), userText);
+
+  if (!(await kvClaim(turnKey(psid), 45))) {
+    log.debug('Энэ хэрэглэгчийг өөр дуудлага боловсруулж байна', { psid: maskPsid(psid) });
+    return;
+  }
+
+  try {
+    await sendSenderAction(psid, 'mark_seen');
+    await sleep(COALESCE_MS); // дараалсан мессежүүдийг хүлээж авна
+
+    for (let round = 0; round < MAX_ROUNDS; round += 1) {
+      const parts = await kvDrainList(bufKey(psid));
+      if (!parts.length) break;
+
+      if (parts.length > 1) {
+        log.info('Дараалсан мессежийг нэгтгэлээ', {
+          psid: maskPsid(psid),
+          count: parts.length,
+        });
+      }
+
+      await respondToTurn(psid, parts.join('\n'));
+    }
+  } finally {
+    await kvDelete(turnKey(psid));
+  }
+}
+
+/**
+ * Нэг ээлжид хариулна.
+ * @param {string} psid
+ * @param {string} userText нэгтгэсэн текст
+ */
+async function respondToTurn(psid, userText) {
   await sendSenderAction(psid, 'typing_on');
 
   try {
+    const session = await getSession(psid);
     const isFirstContact = !session.greeted && session.messages.length === 0;
+
     if (isFirstContact) {
       session.greeted = true;
       await sendText(psid, GREETING);
@@ -133,19 +191,18 @@ export async function handleEvent(event) {
       userName: profile?.first_name ?? null,
     });
 
-    // Ярианы түүхийг хэрэгслийн блокуудтай нь бүтнээр хадгална
     session.messages = result.messages;
     if (result.handedOver) session.handedOver = true;
     await saveSession(psid, session);
 
     await sendSenderAction(psid, 'typing_off');
-    await sendText(psid, result.text, result.handedOver ? undefined : QUICK_REPLIES);
+    await sendText(psid, result.text);
   } catch (err) {
     log.error('Хариу үүсгэхэд алдаа', { psid: maskPsid(psid), error: err.message });
     await sendSenderAction(psid, 'typing_off');
     await sendText(
       psid,
-      'Уучлаарай, алдаа гарлаа. Дахин оролдоно уу эсвэл сургуулийн утсаар холбогдоорой.',
+      'Уучлаарай, алдаа гарлаа. Дахин оролдоно уу эсвэл 7011-8584 руу залгаарай.',
     );
   }
 }

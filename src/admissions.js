@@ -191,9 +191,10 @@ export const isBankConfigured = () =>
  * inDemand: Засгийн газрын 115-р тогтоолын ЭРЭЛТТЭЙ мэргэжлийн жагсаалтад багтсан.
  */
 export const PROGRAMS = [
+  // Эрэлтийн дарааллаар — хамгийн эрэлттэйгээс эхэлнэ
   {
-    id: 'software',
-    name: 'Программ хангамж',
+    id: 'software-2plus2',
+    name: 'Программ хангамж 2+2',
     code: '061302',
     inDemand: true,
     examGroups: [
@@ -202,8 +203,8 @@ export const PROGRAMS = [
     ],
   },
   {
-    id: 'software-2plus2',
-    name: 'Программ хангамж 2+2',
+    id: 'software',
+    name: 'Программ хангамж',
     code: '061302',
     inDemand: true,
     examGroups: [
@@ -219,6 +220,16 @@ export const PROGRAMS = [
     examGroups: [
       { subjects: ['Газар зүй', 'Математик', 'Англи хэл'], minScore: 490 },
       { subjects: ['Ур чадварын шалгалт'], minScore: 490 },
+    ],
+  },
+  {
+    id: 'economics',
+    name: 'Эдийн засаг',
+    code: '031101',
+    inDemand: false,
+    examGroups: [
+      { subjects: ['Математик'], minScore: 490 },
+      { subjects: ['Нийгэм судлал', 'Англи хэл'], minScore: 490 },
     ],
   },
   {
@@ -239,16 +250,6 @@ export const PROGRAMS = [
     examGroups: [
       { subjects: ['Англи хэл', 'Орос хэл'], minScore: 490 },
       { subjects: ['Нийгэм судлал', 'Түүх'], minScore: 490 },
-    ],
-  },
-  {
-    id: 'economics',
-    name: 'Эдийн засаг',
-    code: '031101',
-    inDemand: false,
-    examGroups: [
-      { subjects: ['Математик'], minScore: 490 },
-      { subjects: ['Нийгэм судлал', 'Англи хэл'], minScore: 490 },
     ],
   },
 ];

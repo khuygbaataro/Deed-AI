@@ -262,16 +262,6 @@ export const GREETING = `Сайн байна уу 👋 Би Соёл Эрдэм 
 
 Ямар мэргэжил сонирхож байна вэ?`;
 
-/** Товч сонголтууд (quick replies) — мэргэжлүүд эхэнд */
-export const QUICK_REPLIES = [
-  ...PROGRAMS.slice(0, 4).map((p) => ({
-    title: p.name,
-    payload: `PROGRAM_${p.id.toUpperCase().replace(/-/g, '_')}`,
-  })),
-  { title: '🎓 Бусад мэргэжил', payload: 'ASK_PROGRAMS' },
-  { title: '🙋 Хүнтэй ярих', payload: 'ASK_HUMAN' },
-];
-
 /** Postback/quick reply payload -> хэрэглэгчийн нэрийн өмнөөс илгээх текст */
 export const PAYLOAD_PROMPTS = {
   GET_STARTED: null, // тусгайлан GREETING илгээнэ

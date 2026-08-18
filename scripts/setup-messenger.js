@@ -7,7 +7,7 @@
  * Шаардлага:   .env дотор FB_PAGE_ACCESS_TOKEN
  */
 import { config } from '../src/config.js';
-import { GREETING, QUICK_REPLIES, SCHOOL_NAME } from '../src/prompt.js';
+import { SCHOOL_NAME } from '../src/prompt.js';
 
 if (!config.fb.pageAccessToken) {
   console.error('FB_PAGE_ACCESS_TOKEN тохируулаагүй байна. .env файлаа шалгана уу.');
@@ -44,7 +44,7 @@ const steps = [
       }),
   },
   {
-    name: 'Messenger профайл (мэндчилгээ, цэс, товчлол)',
+    name: 'Messenger профайл (мэндчилгээ, Эхлэх товч)',
     run: () =>
       post('me/messenger_profile', {
         get_started: { payload: 'GET_STARTED' },
@@ -52,31 +52,13 @@ const steps = [
           {
             locale: 'default',
             text:
-              `Сайн байна уу! Энэ бол ${SCHOOL_NAME}-ийн туслах. ` +
+              `Сайн байна уу! Энэ бол ${SCHOOL_NAME}-ийн хиймэл оюун ухаант туслах. ` +
               'Элсэлт, хөтөлбөр, төлбөрийн талаар асуугаарай.',
           },
         ],
-        ice_breakers: [
-          {
-            locale: 'default',
-            call_to_actions: QUICK_REPLIES.slice(0, 4).map((qr) => ({
-              question: qr.title,
-              payload: qr.payload,
-            })),
-          },
-        ],
-        persistent_menu: [
-          {
-            locale: 'default',
-            composer_input_disabled: false,
-            // Messenger-ийн үндсэн цэс дээд түвшинд 3 хүртэл сонголт дэмждэг
-            call_to_actions: [
-              { type: 'postback', title: '📝 Элсэлт', payload: 'ASK_ADMISSION' },
-              { type: 'postback', title: '🌏 Гадаад хөтөлбөр', payload: 'ASK_EXCHANGE' },
-              { type: 'postback', title: '🙋 Хүнтэй ярих', payload: 'ASK_HUMAN' },
-            ],
-          },
-        ],
+        // Товчлуур, цэс ашиглахгүй — хэрэглэгч чөлөөтэй бичнэ.
+        // Хуучин тохиргоог арилгахын тулд хоосон жагсаалт илгээнэ.
+        ice_breakers: [],
       }),
   },
 ];
