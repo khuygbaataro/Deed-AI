@@ -150,6 +150,19 @@ export function determineIncentive(profile = {}) {
  */
 export const EXAM_RULE_MODE = 'all';
 
+/**
+ * БҮХ хөтөлбөрт нэмэлтээр тавигдах шаардлага.
+ * Хөтөлбөрийн 2 багана дээр нэмээд Монгол хэлний ЭЕШ 490+ байх ёстой —
+ * нэг ёсондоо 3 хичээл бүгд босгыг давсан байж байж албан ёсоор
+ * элсэх, улмаар 100% хөнгөлөлтөд хамрагдах боломжтой.
+ */
+export const UNIVERSAL_EXAM_GROUP = { subjects: ['Монгол хэл'], minScore: 490 };
+
+/** Хөтөлбөрийн бүх шаардлага (тухайн хөтөлбөрийнх + бүх нийтийн) */
+export function examGroupsFor(program) {
+  return [...program.examGroups, UNIVERSAL_EXAM_GROUP];
+}
+
 // ─── Төлбөр хүлээн авах данс ────────────────────────────────────────────
 /**
  * Суудлын хураамжийг банкны шилжүүлгээр хүлээн авах мэдээлэл.
@@ -285,7 +298,7 @@ export function evaluateApplicant(programIdOrName, scores, options = {}) {
   // ЭЕШ шаардахгүй. Ийм үед босго хангаагүй гэж үзээд тооцоог үргэлжлүүлнэ.
 
   // Бүлэг тус бүрийг шалгах: бүлэг доторх аль нэг хичээл босго давахад хангагдана
-  const groupResults = program.examGroups.map((group) => {
+  const groupResults = examGroupsFor(program).map((group) => {
     const matching = normalized.filter((s) =>
       group.subjects.some(
         (subject) =>
@@ -361,7 +374,7 @@ export function evaluateApplicant(programIdOrName, scores, options = {}) {
 /** Ботод харуулах хөтөлбөрийн жагсаалт (промптод оруулна) */
 export function programListText() {
   return PROGRAMS.map((p) => {
-    const groups = p.examGroups
+    const groups = examGroupsFor(p)
       .map((g) => `${g.subjects.join(' / ')} — ${g.minScore}+`)
       .join('; ');
     return `- ${p.name} (код ${p.code})${p.inDemand ? ' [ЭРЭЛТТЭЙ мэргэжил]' : ''}: ЭЕШ ${groups}`;
