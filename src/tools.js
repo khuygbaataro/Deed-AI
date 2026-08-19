@@ -47,7 +47,7 @@ export const TOOLS = [
     name: 'set_program_interest',
     description:
       'Хэрэглэгч аль мэргэжлийг сонирхож байгаагаа хэлсэн үед дуудна. ' +
-      'Бүртгэлд тэмдэглээд, тухайн хөтөлбөрийн ЭЕШ-ийн шаардлагыг буцаана. ' +
+      'Бүртгэлд тэмдэглээд, танилцуулга картыг илгээнэ. ' +
       'Хэрэглэгч мэргэжлээ нэрлэсэн даруйд дуудна — нэмэлт зөвшөөрөл шаардахгүй.',
     strict: true,
     input_schema: {
@@ -182,17 +182,12 @@ export async function executeTool(call, ctx) {
         if (image) imageSent = await sendImage(ctx.psid, image);
       }
 
-      const requirements = program.examGroups
-        .map((g) => `${g.subjects.join(' эсвэл ')} — ${g.minScore}+ оноо`)
-        .join('; ');
-
       return {
         content:
           `Бүртгэлээ: ${program.name} (код ${program.code}).` +
           (program.inDemand
             ? ' Энэ нь Засгийн газрын 115-р тогтоолын ЭРЭЛТТЭЙ мэргэжлийн жагсаалтад багтсан.'
             : '') +
-          ` ЭЕШ-ийн шаардлага: ${requirements}.` +
           (imageSent
             ? ' ТАНИЛЦУУЛГА КАРТ ИЛГЭЭГДЛЭЭ. Картан дээр хөтөлбөрийн нэр, гарчиг,'
               + ' бүрэн тайлбар аль хэдийн бичээстэй байна. Тиймээс танилцуулгыг'

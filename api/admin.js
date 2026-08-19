@@ -6,7 +6,7 @@
  * ADMIN_TOKEN тохируулаагүй бол өгөгдөл харагдахгүй — оронд нь тохируулах заавар гарна.
  */
 import { countLeads, listLeads, STAGES } from '../src/leads.js';
-import { TUITION, formatMnt } from '../src/admissions.js';
+import { IS_FIRST_YEAR_FREE, TUITION, formatMnt } from '../src/admissions.js';
 import { kvDriver } from '../src/store.js';
 
 const adminToken = () => {
@@ -91,15 +91,11 @@ function csvCell(value) {
 
 function toCsv(leads) {
   const header = [
-    'Огноо', 'Шат', 'Нэр', 'Утас', 'Мэргэжил', 'ЭЕШ',
-    'Босго', 'Урамшуулал', 'Төлөх дүн', 'Нэхэмжлэх', 'Төлсөн',
+    'Огноо', 'Шат', 'Нэр', 'Нас', 'Утас', 'И-мэйл', 'Мэргэжил', 'Нэхэмжлэх', 'Төлсөн',
   ];
   const rows = leads.map((l) => [
-    l.updatedAt, STAGES[l.stage] ?? l.stage, l.name, l.phone, l.programName,
-    (l.eesh ?? []).map((e) => `${e.subject} ${e.score}`).join(' / '),
-    l.qualified === null ? '' : l.qualified ? 'хангасан' : 'хүрээгүй',
-    l.incentiveLabel,
-    l.annualAfterDiscount === null ? '' : l.annualAfterDiscount,
+    l.updatedAt, STAGES[l.stage] ?? l.stage, l.name, l.age ?? '', l.phone,
+    l.email ?? '', l.programName,
     l.invoice?.senderInvoiceNo ?? '',
     l.invoice?.paidAt ? 'тийм' : '',
   ]);
@@ -125,7 +121,6 @@ function renderPage(leads, total, filter, registeredCount) {
 
   const rows = leads
     .map((l) => {
-      const eesh = (l.eesh ?? []).map((e) => `${esc(e.subject)} <b>${esc(e.score)}</b>`).join('<br>');
       const paid = l.invoice?.paidAt
         ? '<span class="ok">төлсөн</span>'
         : l.invoice
@@ -135,12 +130,10 @@ function renderPage(leads, total, filter, registeredCount) {
         <td class="dim">${esc(new Date(l.updatedAt).toLocaleString('mn-MN'))}</td>
         <td><span class="stage s-${esc(l.stage)}">${esc(STAGES[l.stage] ?? l.stage)}</span></td>
         <td>${esc(l.name ?? '')}</td>
+        <td class="num">${esc(l.age ?? '')}</td>
         <td>${esc(l.phone ?? '')}</td>
+        <td class="dim">${esc(l.email ?? '')}</td>
         <td>${esc(l.programName ?? '')}</td>
-        <td class="dim">${eesh}</td>
-        <td>${l.qualified === null || l.qualified === undefined ? '' : l.qualified ? '✅' : '❌'}</td>
-        <td>${esc(l.incentiveLabel ?? '')}</td>
-        <td>${l.annualAfterDiscount === null || l.annualAfterDiscount === undefined ? '' : esc(formatMnt(l.annualAfterDiscount))}</td>
         <td>${paid}</td>
       </tr>`;
     })
@@ -163,7 +156,8 @@ h1{font-size:1.3rem;margin:0 0 .25rem}
 .card .n{font-size:1.5rem;font-weight:600}
 .card .l{font-size:.75rem;color:var(--muted)}
 .wrap{overflow-x:auto;border:1px solid var(--b);border-radius:10px}
-table{border-collapse:collapse;width:100%;font-size:.875rem;min-width:60rem}
+table{border-collapse:collapse;width:100%;font-size:.875rem;min-width:48rem}
+.num{font-variant-numeric:tabular-nums}
 th,td{padding:.55rem .7rem;text-align:left;border-bottom:1px solid var(--b);vertical-align:top}
 th{font-weight:600;font-size:.75rem;text-transform:uppercase;color:var(--muted);white-space:nowrap}
 tr:last-child td{border-bottom:none}
@@ -180,7 +174,7 @@ a.btn{display:inline-block;margin-top:1rem;font-size:.85rem;text-decoration:none
 </style></head><body>
 <h1>Элсэгчдийн бүртгэл</h1>
 <div class="sub">Нийт ${total} яриа · <b>${registeredCount} нь нэр, утсаа өгсөн</b> ·
-  эхний жил ${formatMnt(TUITION.baseAnnual)} · хураамж ${formatMnt(TUITION.seatDeposit)}</div>
+  ${IS_FIRST_YEAR_FREE ? "эхний жил үнэгүй" : "эхний жил " + formatMnt(TUITION.baseAnnual)} · хураамж ${formatMnt(TUITION.seatDeposit)}</div>
 <div class="tabs">
   <a class="tab ${filter === 'registered' ? '' : 'on'}" href="/api/admin">Бүгд (${total})</a>
   <a class="tab ${filter === 'registered' ? 'on' : ''}" href="/api/admin?filter=registered">✅ Бүртгэгдсэн (${registeredCount})</a>
@@ -191,8 +185,8 @@ ${warning}
 ${
   leads.length
     ? `<table><thead><tr>
-        <th>Огноо</th><th>Шат</th><th>Нэр</th><th>Утас</th><th>Мэргэжил</th>
-        <th>ЭЕШ</th><th>Босго</th><th>Урамшуулал</th><th>Төлөх дүн</th><th>Төлбөр</th>
+        <th>Огноо</th><th>Шат</th><th>Нэр</th><th>Нас</th><th>Утас</th>
+        <th>И-мэйл</th><th>Мэргэжил</th><th>Төлбөр</th>
       </tr></thead><tbody>${rows}</tbody></table>`
     : `<div class="empty">${filter === 'registered' ? 'Нэр, утсаа өгсөн элсэгч хараахан алга.' : 'Одоогоор яриа алга. Messenger-ээр хэн нэгэн бичихэд энд харагдана.'}</div>`
 }
