@@ -153,6 +153,21 @@ export const TOOLS = [
   },
 ];
 
+/** Суудал авсан элсэгчийн бүрэн мэдээллийг админд илгээх текст */
+function seatNotice(lead, extra = '') {
+  return [
+    '🎟 СУУДАЛ ЗАХИАЛГА',
+    `Нэр: ${lead.name ?? '-'}`,
+    `Нас: ${lead.age ?? '-'}`,
+    `Утас: ${lead.phone ?? '-'}`,
+    `И-мэйл: ${lead.email ?? '-'}`,
+    `Мэргэжил: ${lead.programName ?? '-'}`,
+    `Урсгал: ${lead.trackName ?? '-'}`,
+    `Хураамж: ${formatMnt(TUITION.seatDeposit)}`,
+    extra,
+  ].filter(Boolean).join(String.fromCharCode(10));
+}
+
 const REASON_LABELS = {
   user_requested: 'Хэрэглэгч хүсэлт гаргасан',
   complaint: 'Гомдол',
@@ -307,10 +322,7 @@ export async function executeTool(call, ctx) {
           invoice: { senderInvoiceNo, amount: TUITION.seatDeposit, manual: true, createdAt: new Date().toISOString() },
         });
         if (!ctx.offline) {
-          await notifyAdmins(
-            `💳 Төлбөрийн хүсэлт (QPay тохируулаагүй)\n${lead.name} / ${lead.phone}\n` +
-              `${lead.programName ?? '-'} — ${formatMnt(TUITION.seatDeposit)}`,
-          );
+          await notifyAdmins(seatNotice(lead, 'Төлбөр: банкны шилжүүлгээр хүлээгдэж байна'));
         }
         if (bankBlock) {
           return {
@@ -375,10 +387,7 @@ export async function executeTool(call, ctx) {
         .join('\n');
 
       if (!ctx.offline) {
-        await notifyAdmins(
-          `💳 Нэхэмжлэх үүслээ\n${lead.name} / ${lead.phone}\n` +
-            `${lead.programName ?? '-'} — ${formatMnt(TUITION.seatDeposit)}\n№ ${senderInvoiceNo}`,
-        );
+        await notifyAdmins(seatNotice(lead, `Нэхэмжлэх №${senderInvoiceNo}`));
       }
 
       return {
