@@ -114,6 +114,23 @@ export async function handleEvent(event) {
     return;
   }
 
+  // ─── Тохиргооны туслах команд ──────────────────────────────────────
+  // Админ өөрийн PSID-гээ мэдэхийн тулд Page рүү "psid" гэж бичнэ.
+  // Зөвхөн бичсэн хүнд өөрийнх нь дугаарыг харуулна — бусдын мэдээлэл
+  // задрахгүй. FB_ADMIN_PSIDS тохируулахад хэрэгтэй.
+  const cmd = userText.trim().toLowerCase();
+  if (cmd === 'psid' || cmd === '/psid') {
+    await sendSenderAction(psid, 'mark_seen');
+    await sendText(
+      psid,
+      'Таны PSID:' + String.fromCharCode(10) + psid + String.fromCharCode(10, 10) +
+        'Үүнийг Vercel дээр FB_ADMIN_PSIDS хувьсагчид тавибал шинэ элсэгч ' +
+        'суудал захиалах бүрт танд энэ чат руу мэдэгдэл ирнэ.',
+    );
+    log.info('PSID хүсэлт', { psid: maskPsid(psid) });
+    return;
+  }
+
   // ─── Спам хамгаалалт: хурдны хязгаар ───────────────────────────────
   const rate = await checkRateLimit(psid);
   if (!rate.allowed) {
