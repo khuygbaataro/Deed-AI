@@ -64,6 +64,8 @@ export async function getLead(psid) {
     stage: 'new',
     programId: null,
     programName: null,
+    trackId: null,
+    trackName: null,
     name: null,
     age: null,
     phone: null,

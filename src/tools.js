@@ -5,10 +5,13 @@ import { setHandedOver } from './sessions.js';
 import { getLead, saveLead } from './leads.js';
 import {
   BANK_ACCOUNT,
+  FIRST_YEAR_CONDITION,
   PROGRAMS,
+  TRACKS,
   TUITION,
   findProgram,
   formatMnt,
+  findTrack,
   isBankConfigured,
   overviewImageUrl,
   programImageUrl,
@@ -60,6 +63,29 @@ export const TOOLS = [
         },
       },
       required: ['program'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_applicant_track',
+    description:
+      'Элсэгч аль урсгалд хамаарахыг тэмдэглэнэ. Гурван урсгал бий: ' +
+      'standard (шинээр элсэгч, 4 жил, танхим+онлайн), ' +
+      'thirty_plus (30-аас дээш настай), ' +
+      'second_degree (өмнө нь бакалаврын зэрэгтэй, эчнээ 2.5 жил). ' +
+      'Урсгал тодорхой болмогц дуудна — суралцах хугацаа, хэлбэр нь ' +
+      'урсгал бүрт ӨӨР тул үүнийг мэдэхгүйгээр зөв мэдээлэл өгөх боломжгүй.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        track: {
+          type: 'string',
+          enum: ['standard', 'thirty_plus', 'second_degree'],
+          description: 'Элсэгчийн хамаарах урсгал',
+        },
+      },
+      required: ['track'],
       additionalProperties: false,
     },
   },
@@ -195,6 +221,24 @@ export async function executeTool(call, ctx) {
               + ' ор: элсэлтээ баталгаажуулах эсэхийг НЭГ богино өгүүлбэрээр асуу.'
             : ' Хөтөлбөрийн талаар 2-3 өгүүлбэрээр товч танилцуулаад, элсэлтээ'
               + ' баталгаажуулах эсэхийг асуу.'),
+      };
+    }
+
+    // ─── Суралцах урсгал ───────────────────────────────────────────────
+    if (name === 'set_applicant_track') {
+      const track = findTrack(input.track);
+      if (!track) return { content: `Тодорхойгүй урсгал: ${input.track}`, isError: true };
+
+      await saveLead(ctx.psid, { trackId: track.id, trackName: track.name });
+
+      return {
+        content: [
+          `Урсгал тэмдэглэгдлээ: ${track.name}.`,
+          `Суралцах хугацаа: ${track.duration}. Хэлбэр: ${track.format}`,
+          `Эхний жилийн сургалтын төлбөр ҮНЭГҮЙ. ${FIRST_YEAR_CONDITION}`,
+          'Эдгээрийг хэрэглэгчид ТОВЧ хэлээд, суудлаа баталгаажуулах эсэхийг асуу.',
+          'Хугацаа, хэлбэрийг өөрөө бүү зохио — дээрх утгыг яг хэвээр нь хэрэглэ.',
+        ].join(' '),
       };
     }
 

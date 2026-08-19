@@ -91,11 +91,11 @@ function csvCell(value) {
 
 function toCsv(leads) {
   const header = [
-    'Огноо', 'Шат', 'Нэр', 'Нас', 'Утас', 'И-мэйл', 'Мэргэжил', 'Нэхэмжлэх', 'Төлсөн',
+    'Огноо', 'Шат', 'Нэр', 'Нас', 'Утас', 'И-мэйл', 'Мэргэжил', 'Урсгал', 'Нэхэмжлэх', 'Төлсөн',
   ];
   const rows = leads.map((l) => [
     l.updatedAt, STAGES[l.stage] ?? l.stage, l.name, l.age ?? '', l.phone,
-    l.email ?? '', l.programName,
+    l.email ?? '', l.programName, l.trackName ?? '',
     l.invoice?.senderInvoiceNo ?? '',
     l.invoice?.paidAt ? 'тийм' : '',
   ]);
@@ -134,6 +134,7 @@ function renderPage(leads, total, filter, registeredCount) {
         <td>${esc(l.phone ?? '')}</td>
         <td class="dim">${esc(l.email ?? '')}</td>
         <td>${esc(l.programName ?? '')}</td>
+        <td class="dim">${esc(l.trackName ?? '')}</td>
         <td>${paid}</td>
       </tr>`;
     })
@@ -186,7 +187,7 @@ ${
   leads.length
     ? `<table><thead><tr>
         <th>Огноо</th><th>Шат</th><th>Нэр</th><th>Нас</th><th>Утас</th>
-        <th>И-мэйл</th><th>Мэргэжил</th><th>Төлбөр</th>
+        <th>И-мэйл</th><th>Мэргэжил</th><th>Урсгал</th><th>Төлбөр</th>
       </tr></thead><tbody>${rows}</tbody></table>`
     : `<div class="empty">${filter === 'registered' ? 'Нэр, утсаа өгсөн элсэгч хараахан алга.' : 'Одоогоор яриа алга. Messenger-ээр хэн нэгэн бичихэд энд харагдана.'}</div>`
 }
