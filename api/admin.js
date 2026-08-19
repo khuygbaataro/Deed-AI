@@ -180,7 +180,7 @@ a.btn{display:inline-block;margin-top:1rem;font-size:.85rem;text-decoration:none
 </style></head><body>
 <h1>Элсэгчдийн бүртгэл</h1>
 <div class="sub">Нийт ${total} яриа · <b>${registeredCount} нь нэр, утсаа өгсөн</b> ·
-  үндсэн төлбөр ${formatMnt(TUITION.baseAnnual)} · хураамж ${formatMnt(TUITION.seatDeposit)}</div>
+  эхний жил ${formatMnt(TUITION.baseAnnual)} · хураамж ${formatMnt(TUITION.seatDeposit)}</div>
 <div class="tabs">
   <a class="tab ${filter === 'registered' ? '' : 'on'}" href="/api/admin">Бүгд (${total})</a>
   <a class="tab ${filter === 'registered' ? 'on' : ''}" href="/api/admin?filter=registered">✅ Бүртгэгдсэн (${registeredCount})</a>

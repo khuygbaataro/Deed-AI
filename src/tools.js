@@ -7,7 +7,6 @@ import {
   BANK_ACCOUNT,
   PROGRAMS,
   TUITION,
-  evaluateApplicant,
   findProgram,
   formatMnt,
   isBankConfigured,
@@ -24,7 +23,7 @@ const PROGRAM_NAMES = PROGRAMS.map((p) => p.name);
  * Claude-д зарлах хэрэгслүүд.
  * strict: true — оролтын бүтэц баталгаатай зөв ирнэ.
  *
- * ⚠️ Мөнгө, эрхийн тооцоог AI хийхгүй. check_eesh_and_price нь admissions.js
+ * ⚠️ Дүн, төлбөрийг AI бодохгүй. Бүх тоо admissions.js-ээс гарна
  * доторх кодоор тооцоолж, бэлэн үр дүнг буцаана.
  */
 export const TOOLS = [
@@ -65,63 +64,6 @@ export const TOOLS = [
     },
   },
   {
-    name: 'check_eesh_and_price',
-    description:
-      'Элсэгчийн нөхцөл байдлыг үнэлж, хөнгөлөлт болон төлбөрийг ТООЦУУЛНА. ' +
-      'ЭЕШ-ийн оноо болон орон нутгийн эсэхийг мэдсэн даруйд дуудна. ' +
-      'ЧУХАЛ: чи өөрөө босго давсан эсэхийг шүүх, хөнгөлөлтийн хувь сонгох, үнэ бодохыг ' +
-      'ОРОЛДОЖ БОЛОХГҮЙ — зөвхөн энэ хэрэгслийн буцаасан тоог давтаж хэл.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        program: { type: 'string', enum: PROGRAM_NAMES, description: 'Хөтөлбөрийн нэр' },
-        scores: {
-          type: 'array',
-          description:
-            'ЭЕШ-ийн хичээл болон оноо. Оноо аваагүй, эсвэл ЭЕШ өгөөгүй бол хоосон массив.',
-          items: {
-            type: 'object',
-            properties: {
-              subject: {
-                type: 'string',
-                description: 'Хичээлийн нэр, жишээ: Математик, Англи хэл, Нийгэм судлал',
-              },
-              score: { type: 'number', description: 'ЭЕШ-ийн оноо (0-800)' },
-            },
-            required: ['subject', 'score'],
-            additionalProperties: false,
-          },
-        },
-        is_rural: {
-          type: 'boolean',
-          description:
-            'Орон нутгаас (Улаанбаатараас гадуур) элсэж байгаа эсэх. ' +
-            '100% хөнгөлөлтөд ЗААВАЛ шаардлагатай тул үргэлж асууж тодруул.',
-        },
-        level: {
-          type: 'string',
-          enum: ['bachelor', 'master'],
-          description: 'Бакалавр эсвэл магистрын хөтөлбөр. Тодорхойгүй бол bachelor.',
-        },
-        age: {
-          type: 'number',
-          description: 'Элсэгчийн нас. Мэдэхгүй эсвэл хамаагүй бол 0.',
-        },
-        work_years: {
-          type: 'number',
-          description: 'Мэргэжлээрээ ажилласан жил. Мэдэхгүй эсвэл хамаагүй бол 0.',
-        },
-        has_bachelor: {
-          type: 'boolean',
-          description: 'Аль хэдийн бакалаврын зэрэгтэй эсэх (хоёр дахь мэргэжил).',
-        },
-      },
-      required: ['program', 'scores', 'is_rural', 'level', 'age', 'work_years', 'has_bachelor'],
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'save_contact_info',
     description:
       'Хэрэглэгчийн нэр, утасны дугаарыг бүртгэнэ. Хоёр тохиолдолд хэрэглэнэ: ' +
@@ -132,9 +74,11 @@ export const TOOLS = [
       type: 'object',
       properties: {
         full_name: { type: 'string', description: 'Овог нэр' },
+        age: { type: 'number', description: 'Элсэгчийн нас. Хэлээгүй бол 0.' },
         phone: { type: 'string', description: 'Утасны дугаар' },
+        email: { type: 'string', description: 'Gmail хаяг. Хэлээгүй бол хоосон мөр.' },
       },
-      required: ['full_name', 'phone'],
+      required: ['full_name', 'age', 'phone', 'email'],
       additionalProperties: false,
     },
   },
@@ -259,103 +203,28 @@ export async function executeTool(call, ctx) {
       };
     }
 
-    // ─── Хөнгөлөлт, үнэ тооцох (кодоор) ────────────────────────────────
-    if (name === 'check_eesh_and_price') {
-      const profile = {
-        level: input.level === 'master' ? 'master' : 'bachelor',
-        isRural: Boolean(input.is_rural),
-        hasEesh: Array.isArray(input.scores) && input.scores.length > 0,
-        age: Number(input.age) || 0,
-        workYears: Number(input.work_years) || 0,
-        hasBachelor: Boolean(input.has_bachelor),
-      };
-
-      const result = evaluateApplicant(input.program, input.scores, profile);
-      if (!result.ok) return { content: result.error, isError: true };
-
-      // Оноо дутуу бол хөнгөлөлт ЗАРЛАХГҮЙ — дутуу хичээлийг нь асууна.
-      // Эс бөгөөс 100% эрхтэй элсэгчид 20% гэж буруу хэлэх эрсдэлтэй.
-      if (result.incomplete) {
-        const ask = result.missingSubjects.join(' эсвэл ');
-        return {
-          content: [
-            'МЭДЭЭЛЭЛ ДУТУУ БАЙНА — хөнгөлөлтийг хараахан тооцоогүй.',
-            `Дараах хичээлийн оноог хэрэглэгчээс асуу: ${ask}.`,
-            'Хөнгөлөлтийн талаар ЮУ Ч БҮҮ ХЭЛ — зөвхөн дутуу оноог эелдгээр асуу.',
-            'Хэрэв тухайн хичээлээр ЭЕШ өгөөгүй гэвэл оноог нь 0 гэж оруулаад',
-            'энэ хэрэгслийг дахин дууд.',
-          ].join(' '),
-        };
-      }
-      await saveLead(ctx.psid, {
-        programId: result.program.id,
-        programName: result.program.name,
-        eesh: input.scores,
-        qualified: result.qualified,
-        isRural: profile.isRural,
-        incentiveId: result.incentive.id,
-        incentiveLabel: result.incentive.label,
-        annualAfterDiscount: result.annualAfterDiscount,
-        stage: 'eesh_checked',
-      });
-
-      const breakdown = result.groupResults
-        .map(
-          (g) =>
-            `${g.subjects.join('/')} (${g.minScore}+): ` +
-            (g.best ? `${g.best.subject} ${g.best.score} — ${g.met ? 'хангасан' : 'хүрээгүй'}` : 'оноо өгөөгүй'),
-        )
-        .join(' | ');
-
-      const otherOptions = (result.eligibleIncentives ?? [])
-        .filter((i) => i.id !== result.incentive.id)
-        .map((i) => `${i.label} (${i.reason})`)
-        .join('; ');
-
-      const depositLine = result.depositDeductible
-        ? `- Суудлын хураамж ${formatMnt(result.seatDeposit)} нь ЭНЭ ХӨНГӨЛСӨН ДҮНГЭЭС хасагдана\n` +
-          `- Хураамж төлсний дараах үлдэгдэл: ${formatMnt(result.remainingBalance)}\n`
-        : `- Суудлын хураамж ${formatMnt(result.seatDeposit)} нь сургалтын төлбөрөөс ТУСДАА төлөгдөнө\n`;
-
-      return {
-        content:
-          `ТООЦООЛСОН ҮР ДҮН (эдгээр тоог яг хэвээр нь хэрэглэ, өөрөө бүү тооцоол):\n` +
-          `- Шалгалтын задаргаа: ${breakdown}\n` +
-          `- Босго хангасан эсэх: ${result.qualified ? 'ТИЙМ' : 'ҮГҮЙ'}\n` +
-          `- Орон нутгийн элсэгч: ${profile.isRural ? 'ТИЙМ' : 'ҮГҮЙ'}\n` +
-          `- ОЛГОГДОХ ХӨНГӨЛӨЛТ: ${result.incentive.label} — ${result.incentive.reason}\n` +
-          (result.incentive.note ? `- Тайлбар: ${result.incentive.note}\n` : '') +
-          (otherOptions ? `- Бас хамрагдаж болох: ${otherOptions}\n` : '') +
-          `- Жилийн үндсэн төлбөр: ${formatMnt(result.baseAnnual)}\n` +
-          `- Хөнгөлөлт: ${formatMnt(result.discountAmount)}\n` +
-          `- Хөнгөлсний дараах жилийн төлбөр: ${formatMnt(result.annualAfterDiscount)}\n` +
-          depositLine +
-          `- Элсэгчийн нийт төлөх дүн: ${formatMnt(result.totalPayable)}\n\n` +
-          `Хэрэглэгчид урамшуулал, үндсэн үнэ, хөнгөлсөн үнийг товч хэлээд, ` +
-          `суудлын хураамж хасагдах эсэхийг тодорхой хэл. Дараа нь суудлаа ` +
-          `баталгаажуулах эсэхийг асуу. Энэ бол урьдчилсан тооцоо гэдгийг нэг өгүүлбэрээр дурд.`,
-      };
-    }
-
     // ─── Холбоо барих мэдээлэл ─────────────────────────────────────────
     if (name === 'save_contact_info') {
       await saveLead(ctx.psid, {
         name: input.full_name,
+        age: Number(input.age) || null,
         phone: input.phone,
+        email: input.email || null,
         stage: 'contact_saved',
       });
 
       if (!ctx.offline) {
         const lead = await getLead(ctx.psid);
         await notifyAdmins(
-          `📇 Шинэ элсэгч\nНэр: ${input.full_name}\nУтас: ${input.phone}\n` +
-            `Мэргэжил: ${lead.programName ?? '-'}\nУрамшуулал: ${lead.incentiveLabel ?? '-'}`,
+          `📇 Шинэ элсэгч\nНэр: ${input.full_name}\nНас: ${input.age || '-'}\n` +
+            `Утас: ${input.phone}\nGmail: ${input.email || '-'}\n` +
+            `Мэргэжил: ${lead.programName ?? '-'}`,
         );
       }
 
       return {
         content:
-          'Нэр, утас бүртгэгдлээ. Одоо суудал баталгаажуулах нэхэмжлэх үүсгэх эсэхийг асуу.',
+          'Нэр, нас, утас, gmail бүртгэгдлээ. Одоо суудал баталгаажуулах нэхэмжлэх үүсгэх эсэхийг асуу.',
       };
     }
 

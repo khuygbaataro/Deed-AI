@@ -20,7 +20,7 @@ const key = (psid) => `lead:${psid}`;
 export const STAGES = {
   new: 'Шинэ',
   program_selected: 'Мэргэжил сонгосон',
-  eesh_checked: 'ЭЕШ шалгасан',
+  eesh_checked: 'ЭЕШ шалгасан', // хуучин бодлогын үлдэгдэл — шинэ яриа энд орохгүй
   contact_saved: 'Холбоо барих мэдээлэл өгсөн',
   invoice_created: 'Нэхэмжлэх үүссэн',
   paid: 'Төлбөр төлсөн',
@@ -65,7 +65,9 @@ export async function getLead(psid) {
     programId: null,
     programName: null,
     name: null,
+    age: null,
     phone: null,
+    email: null,
     eesh: [],
     qualified: null,
     incentiveLabel: null,

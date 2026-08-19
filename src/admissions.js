@@ -1,184 +1,51 @@
 /**
- * ЭЛСЭЛТИЙН ДҮРЭМ, ҮНЭ, ТООЦОО — нэг эх сурвалж.
+ * ЭЛСЭЛТИЙН ДҮРЭМ, ҮНЭ — нэг эх сурвалж.
  *
- * ⚠️ ЧУХАЛ: Хөнгөлөлт, эрх, үнийн тооцоог AI хийхгүй. Энэ файл дахь код л
- * тооцоолно. AI зөвхөн оюутнаас мэдээлэл цуглуулж, кодын гаргасан үр дүнг
- * дамжуулна. Ингэснээр бот хэн нэгэнд буруу тэтгэлэг амлах эрсдэлгүй.
+ * Үнэ өөрчлөгдвөл ЗӨВХӨН энэ файлыг засна. Дүн эндээс промпт, tool-ийн
+ * тайлбар, QPay нэхэмжлэх рүү автоматаар урсдаг.
  *
- * Үнэ, оноо өөрчлөгдвөл ЗӨВХӨН энэ файлыг засна.
- * Эх сурвалж: Захирлын 2024.04.16-ны 01/13 тоот тушаалын хавсралт 1.
+ * 2026-2027 оны элсэлтийн бодлого:
+ *   - ЭХНИЙ ЖИЛИЙН сургалтын төлбөр БҮХ хөтөлбөрт үнэгүй
+ *   - 2 дахь жилээс хойшхи төлбөр сургуулиас БАТАЛГААЖААГҮЙ (laterYearsAnnual)
+ *   - ЭЕШ өгсөн эсэх шаардахгүй, оноо асуухгүй
+ *   - Орон нутаг / Улаанбаатар ялгаагүй
+ *   - Элсэгч зөвхөн суудал баталгаажуулах хураамж төлнө
+ *
+ * Өмнөх бодлого (жилийн 5,500,000₮, ЭЕШ-ийн босго, орон нутгийн 100%
+ * хөнгөлөлт) хүчингүй болсон тул хөнгөлөлт тооцох код бүхэлдээ хасагдсан —
+ * 0₮-өөс хасах зүйл байхгүй.
  */
 
 // ─── Төлбөр ──────────────────────────────────────────────────────────────
 export const TUITION = {
-  /** Жилийн үндсэн сургалтын төлбөр (₮) */
-  baseAnnual: 5_500_000,
-  /** Суудал баталгаажуулах хураамж — хөнгөлөлтөөс үл хамааран бүгд төлнө (₮) */
-  seatDeposit: 500_000,
+  /** ЭХНИЙ ЖИЛИЙН сургалтын төлбөр. 2026-2027 элсэлтэд бүх хөтөлбөрт үнэгүй. */
+  baseAnnual: 0,
+  /** Үнэгүй нь хэдэн жилд хамаарах вэ */
+  freeYears: 1,
+  /**
+   * 2 дахь жилээс хойшхи жилийн төлбөр.
+   * null = сургуулиас баталгаажаагүй. Бот энэ тохиолдолд дүн ХЭЛЭХГҮЙ,
+   * "баталгаатай мэдээлэл алга" гээд элсэлтийн ажилтан руу чиглүүлнэ.
+   * Дүн тодорхой болмогц энд бичнэ — өөр хаана ч засах шаардлагагүй.
+   */
+  laterYearsAnnual: null,
+  /** Суудал баталгаажуулах хураамж — элсэгч бүр төлнө */
+  seatDeposit: 250_000,
   currency: 'MNT',
 };
 
-// ─── Хөнгөлөлт, тэтгэлгийн бодлого ───────────────────────────────────────
-/**
- * Эх сурвалж: 2026-2027 оны элсэлтийн "Тэтгэлэг, хөнгөлөлтийн бодлого" зурагт хуудас.
- *
- * depositDeductible — суудлын хураамж сургалтын төлбөрөөс хасагдах эсэх:
- *   false → хураамж нь төлбөрөөс ТУСДАА (100% хөнгөлөлтөд хасах төлбөр байхгүй)
- *   true  → хураамж нь ХӨНГӨЛСӨН дүнгээс хасагдана
- */
-export const INCENTIVES = {
-  /** 1. Орон нутгийн элсэгчдэд */
-  rural_full: {
-    id: 'rural_full',
-    rate: 1.0,
-    label: '100% хөнгөлөлт',
-    reason: 'Орон нутгаас элсэж, ЭЕШ-ийн босго онооны шаардлагыг хангасан',
-    note: 'Бакалаврын бүх хөтөлбөрт хамаарна. 2026-2027 оны хичээлийн жилийн төлбөр.',
-    depositDeductible: false,
-  },
-  /** Улаанбаатарын элсэгчид, ЭЕШ-ийн босго хангасан */
-  urban_half: {
-    id: 'urban_half',
-    rate: 0.5,
-    label: '50% хөнгөлөлт',
-    reason: 'Улаанбаатараас элсэж, ЭЕШ-ийн босго онооны шаардлагыг хангасан',
-    note: '2026-2027 оны хичээлийн жилийн төлбөр.',
-    depositDeductible: true,
-  },
-  /** 3. "30+" хөтөлбөр */
-  thirty_plus: {
-    id: 'thirty_plus',
-    rate: 0.5,
-    label: '50% хөнгөлөлт',
-    reason: '"30+" хөтөлбөр — 30-аас дээш настай, мэргэжлээрээ 2-оос дээш жил ажилласан',
-    note: 'ЭЕШ-ийн оноогүй байж болно. Эчнээ болон зайн сургалтаар бакалаврын зэрэг олгоно.',
-    depositDeductible: true,
-  },
-  /** 4. Хоёр дахь мэргэжлийн хөтөлбөр */
-  second_degree: {
-    id: 'second_degree',
-    rate: 0.5,
-    label: '50% хөнгөлөлт',
-    reason: 'Хоёр дахь мэргэжлийн хөтөлбөр — бакалаврын зэрэгтэй иргэн',
-    note: 'Оройн, эчнээ болон зайн хэлбэрээр элсүүлнэ. ЭЕШ шаардахгүй — өмнөх бакалаврын боловсрол хангалттай.',
-    depositDeductible: true,
-  },
-  /** 5. Магистрын хөтөлбөр (орон нутгийн) */
-  master_rural: {
-    id: 'master_rural',
-    rate: 0.4,
-    label: '40% хөнгөлөлт',
-    reason: 'Орон нутгаас магистрын хөтөлбөрт элсэгч',
-    note: '2026-2027 оны хичээлийн жилийн төлбөр.',
-    depositDeductible: true,
-  },
-  /** 2. Бэлтгэл ангийн хөтөлбөр */
-  prep_class: {
-    id: 'prep_class',
-    rate: 0.2,
-    label: '20% хөнгөлөлт',
-    reason: 'Бэлтгэл ангийн хөтөлбөр — ЭЕШ-ийн босго онооны шаардлага хангаагүй',
-    note: 'Эчнээ сургалтад сурах явцад ЭЕШ-д бэлтгэх сургалтад хамруулна.',
-    depositDeductible: true,
-  },
-  /** Аль ч хөнгөлөлтөд хамрагдаагүй */
-  none: {
-    id: 'none',
-    rate: 0,
-    label: 'Хөнгөлөлтгүй',
-    reason: 'Дээрх хөнгөлөлтийн аль нэгэнд хамрагдах нөхцөл бүрдээгүй',
-    note: 'Элсэлтийн албанаас нэмэлт боломжийг лавлана уу.',
-    depositDeductible: true,
-  },
-};
-
-/**
- * Элсэгчийн нөхцөл байдлаас хамаарч хамрагдах БҮХ хөнгөлөлтийг олоод,
- * хамгийн өндөр хувьтайг нь буцаана.
- *
- * @param {{
- *   level?: 'bachelor'|'master',
- *   isRural?: boolean,      // орон нутгаас элсэж байгаа эсэх
- *   meetsEesh?: boolean,    // ЭЕШ-ийн босго хангасан эсэх
- *   hasEesh?: boolean,      // ЭЕШ өгсөн эсэх
- *   age?: number,
- *   workYears?: number,     // мэргэжлээрээ ажилласан жил
- *   hasBachelor?: boolean,  // бакалаврын зэрэгтэй эсэх
- * }} profile
- * @returns {{best: object, eligible: object[]}}
- */
-export function determineIncentive(profile = {}) {
-  const {
-    level = 'bachelor',
-    isRural = false,
-    meetsEesh = false,
-    hasEesh = true,
-    age = null,
-    workYears = null,
-    hasBachelor = false,
-  } = profile;
-
-  const eligible = [];
-
-  if (level === 'master') {
-    if (isRural) eligible.push(INCENTIVES.master_rural);
-  } else {
-    if (meetsEesh) {
-      eligible.push(isRural ? INCENTIVES.rural_full : INCENTIVES.urban_half);
-    }
-    if (!meetsEesh) eligible.push(INCENTIVES.prep_class);
-  }
-
-  if (hasBachelor) eligible.push(INCENTIVES.second_degree);
-  if (!hasEesh && Number(age) >= 30 && Number(workYears) >= 2) {
-    eligible.push(INCENTIVES.thirty_plus);
-  }
-
-  const best = eligible.reduce((a, b) => (!a || b.rate > a.rate ? b : a), null);
-  return { best: best ?? INCENTIVES.none, eligible };
-}
-
-/**
- * ЭЕШ-ийн бүлгүүдийг хэрхэн шалгах вэ?
- *   'all' — бүх бүлгийн шаардлагыг хангасан байх ёстой
- *   'any' — аль нэг бүлгийг хангасан бол хангалттай
- * Бүлэг доторх хичээлүүдээс АЛЬ НЭГ нь босго оноог давахад тухайн бүлэг хангагдана.
- *
- * ⚠️ ТОДРУУЛАХ: Тушаалын хүснэгтэд ЭЕШ хоёр баганаар өгөгдсөн. Хоёуланг нь
- * хангах ёстой юу, эсвэл аль нэгээр нь элсэх боломжтой юу гэдгийг элсэлтийн
- * комиссоос баталгаажуулна уу. Одоогоор 'all' гэж үзсэн.
- */
-export const EXAM_RULE_MODE = 'all';
-
-/**
- * БҮХ хөтөлбөрт нэмэлтээр тавигдах шаардлага.
- * Хөтөлбөрийн 2 багана дээр нэмээд Монгол хэлний ЭЕШ 490+ байх ёстой —
- * нэг ёсондоо 3 хичээл бүгд босгыг давсан байж байж албан ёсоор
- * элсэх, улмаар 100% хөнгөлөлтөд хамрагдах боломжтой.
- */
-export const UNIVERSAL_EXAM_GROUP = { subjects: ['Монгол хэл'], minScore: 490 };
-
-/** Хөтөлбөрийн бүх шаардлага (тухайн хөтөлбөрийнх + бүх нийтийн) */
-export function examGroupsFor(program) {
-  return [...program.examGroups, UNIVERSAL_EXAM_GROUP];
-}
+/** Эхний жилийн төлбөр үнэгүй эсэх */
+export const IS_FIRST_YEAR_FREE = TUITION.baseAnnual === 0;
 
 // ─── Төлбөр хүлээн авах данс ────────────────────────────────────────────
 /**
  * Суудлын хураамжийг банкны шилжүүлгээр хүлээн авах мэдээлэл.
- * Гүйлгээний утгад ЭЛСЭГЧИЙН БҮТЭН НЭРИЙГ бичнэ — үүгээр төлбөрийг
- * тухайн хүүхэдтэй тулгана.
- *
- * БӨГЛӨХ: гурван талбарыг бөглөх хүртэл бот дансны мэдээлэл өгөхгүй.
+ * Гүйлгээний утгад ЭЛСЭГЧИЙН БҮТЭН НЭРИЙГ бичнэ.
  */
 export const BANK_ACCOUNT = {
   bankName: 'Худалдаа Хөгжлийн банк',
   accountNumber: '499034349',
-  // ⚠️ БАТАЛГААЖУУЛАХ: сургуулиас "IBAN 300004000" гэж ирсэн. Монголын IBAN нь
-  // ихэвчлэн банкны код + дансны дугаараас бүрддэг тул бүтэн хэлбэр нь
-  // 300004000499034349 байх магадлалтай. Эхний гүйлгээгээр шалгана уу.
   iban: '300004000499034349',
-  // ⚠️ БАТАЛГААЖУУЛАХ: хүлээн авагчийн нэрийг сургуулиас тодруулаагүй.
   accountName: 'Соёл Эрдэм Дээд Сургууль',
 };
 
@@ -186,18 +53,6 @@ export const isBankConfigured = () =>
   Boolean(BANK_ACCOUNT.bankName && BANK_ACCOUNT.accountNumber && BANK_ACCOUNT.accountName);
 
 // ─── Хөтөлбөрийн танилцуулга зураг ──────────────────────────────────────
-/**
- * Хөтөлбөр бүрийн танилцуулга зураг.
- *
- * Зургийг public/programs/ хавтсанд хийхэд Vercel автоматаар нийтэлнэ.
- * Жишээ: public/programs/software.jpg -> /programs/software.jpg
- *
- * Утга нь null бол бот тухайн хөтөлбөрт зураг илгээхгүй, зөвхөн текстээр
- * танилцуулна. Зураг нэмэхэд энд замыг нь бичихэд л хангалттай.
- *
- * Санамж: Messenger-т 1200x628 эсвэл 1080x1080 хэмжээ тохиромжтой,
- * файлын хэмжээ 8MB-аас бага, JPG эсвэл PNG байна.
- */
 export const PROGRAM_IMAGES = {
   'software-2plus2': '/programs/software-2plus2.png',
   software: '/programs/software.png',
@@ -207,19 +62,10 @@ export const PROGRAM_IMAGES = {
   'area-studies': '/programs/area-studies.png',
 };
 
-/**
- * Бүх мэргэжлийг нэг дор харуулах карт.
- * Ярианы эхэнд илгээнэ — карт дээр "дугаараа бичээрэй" гэж заасан тул
- * хэрэглэгч 1-6 хүртэлх тоогоор мэргэжлээ сонгоно.
- */
+/** Бүх мэргэжлийг нэг дор харуулах карт (ярианы эхэнд илгээнэ) */
 export const OVERVIEW_IMAGE = '/programs/all-programs.png';
 
-/**
- * Хөтөлбөрийн зургийн бүтэн хаягийг гаргана.
- * Messenger гадны системээс татдаг тул заавал абсолют https хаяг байх ёстой.
- * @param {string} programId
- * @returns {string|null}
- */
+/** Хөтөлбөрийн зургийн бүтэн https хаяг */
 export function programImageUrl(programId) {
   return resolveImageUrl(PROGRAM_IMAGES[programId]);
 }
@@ -227,7 +73,7 @@ export function programImageUrl(programId) {
 /** Харьцангуй замыг Messenger уншиж чадах бүтэн https хаяг болгоно */
 function resolveImageUrl(path) {
   if (!path) return null;
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
 
   const base =
     process.env.PUBLIC_BASE_URL ||
@@ -237,8 +83,8 @@ function resolveImageUrl(path) {
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
 
   if (!base) return null;
-  const root = base.endsWith("/") ? base.slice(0, -1) : base;
-  const suffix = path.startsWith("/") ? path : `/${path}`;
+  const root = base.endsWith('/') ? base.slice(0, -1) : base;
+  const suffix = path.startsWith('/') ? path : `/${path}`;
   return `${root}${suffix}`;
 }
 
@@ -249,16 +95,20 @@ export function overviewImageUrl() {
 
 // ─── Хөтөлбөрүүд ─────────────────────────────────────────────────────────
 /**
- * examGroups: тушаалын хүснэгтийн ЭЕШ багана бүр нэг бүлэг.
  * inDemand: Засгийн газрын 115-р тогтоолын ЭРЭЛТТЭЙ мэргэжлийн жагсаалтад багтсан.
+ * pitch: элсэгчид юу болох вэ гэдгийг нэг өгүүлбэрээр — олон хөтөлбөр
+ *        харьцуулж санал болгоход ашиглана.
+ *
+ * examGroups нь ӨМНӨХ бодлогын лавлагаа. Одоогийн элсэлтэд ЭЕШ шаардахгүй тул
+ * хаана ч уншигдахгүй — бодлого буцаж өөрчлөгдвөл эх өгөгдөл нь хэвээр байна.
  */
 export const PROGRAMS = [
-  // Эрэлтийн дарааллаар — хамгийн эрэлттэйгээс эхэлнэ
   {
     id: 'software-2plus2',
     name: 'Программ хангамж 2+2',
     code: '061302',
     inDemand: true,
+    pitch: 'Хоёр жил энд, хоёр жил гадаадад — давхар диплом, Японд ажиллах зам.',
     examGroups: [
       { subjects: ['Математик', 'Физик'], minScore: 490 },
       { subjects: ['Нийгэм судлал', 'Англи хэл'], minScore: 450 },
@@ -269,6 +119,7 @@ export const PROGRAMS = [
     name: 'Программ хангамж',
     code: '061302',
     inDemand: true,
+    pitch: 'Программист мэргэжил — эрэлттэй мэргэжлийн жагсаалтад багтдаг.',
     examGroups: [
       { subjects: ['Математик', 'Физик'], minScore: 490 },
       { subjects: ['Нийгэм судлал', 'Англи хэл'], minScore: 450 },
@@ -279,6 +130,7 @@ export const PROGRAMS = [
     name: 'Аялал жуулчлал',
     code: '101501',
     inDemand: true,
+    pitch: 'Аялал жуулчлалын салбарт менежер, зохион байгуулагчаар ажиллана.',
     examGroups: [
       { subjects: ['Газар зүй', 'Математик', 'Англи хэл'], minScore: 490 },
       { subjects: ['Ур чадварын шалгалт'], minScore: 490 },
@@ -289,6 +141,7 @@ export const PROGRAMS = [
     name: 'Эдийн засаг',
     code: '031101',
     inDemand: false,
+    pitch: 'Банк, санхүү, компанийн эдийн засгийн чиглэлээр мэргэшинэ.',
     examGroups: [
       { subjects: ['Математик'], minScore: 490 },
       { subjects: ['Нийгэм судлал', 'Англи хэл'], minScore: 490 },
@@ -299,6 +152,7 @@ export const PROGRAMS = [
     name: 'Гадаад хэлний орчуулга',
     code: '023101',
     inDemand: false,
+    pitch: 'Орчуулагч, хэлний мэргэжилтэн — олон улсын байгууллагад ажиллах зам.',
     examGroups: [
       { subjects: ['Англи хэл', 'Орос хэл', 'Математик'], minScore: 490 },
       { subjects: ['Нийгэм судлал', 'Монгол хэл', 'Түүх'], minScore: 490 },
@@ -309,6 +163,7 @@ export const PROGRAMS = [
     name: 'Олон улс, орон судлал',
     code: '022203',
     inDemand: false,
+    pitch: 'Гадаад харилцаа, орон судлал — дипломат, олон улсын чиглэл.',
     examGroups: [
       { subjects: ['Англи хэл', 'Орос хэл'], minScore: 490 },
       { subjects: ['Нийгэм судлал', 'Түүх'], minScore: 490 },
@@ -328,132 +183,19 @@ export function findProgram(idOrName) {
   );
 }
 
-/** ₮ форматлах: 5500000 -> "5,500,000₮" */
+/** ₮ форматлах: 250000 -> "250,000₮" */
 export function formatMnt(amount) {
   return `${Math.round(amount).toLocaleString('en-US')}₮`;
 }
 
 /**
- * Элсэгчийн ЭЕШ оноог хөтөлбөрийн шаардлагатай тулгаж, урамшууллыг тооцно.
- *
- * @param {string} programIdOrName
- * @param {Array<{subject: string, score: number}>} scores
- * @param {{forceIncentive?: 'full'|'half'|'standard'}} [options]
- *        forceIncentive — тооцоог давж, тодорхой урамшуулал оногдуулах
- *        (жишээ нь элсэлтийн комиссын шийдвэрээр 50% олгох үед)
- * @returns {{
- *   ok: boolean, error?: string,
- *   program?: object, qualified?: boolean,
- *   groupResults?: Array<{subjects: string[], minScore: number, met: boolean, best: object|null}>,
- *   incentive?: object, baseAnnual?: number, discountAmount?: number,
- *   annualAfterDiscount?: number, seatDeposit?: number, summary?: string
- * }}
+ * Ботод харуулах хөтөлбөрийн жагсаалт (промптод оруулна).
+ * ЭЕШ-ийн босго ОРУУЛАХГҮЙ — одоогийн элсэлтэд шаардахгүй тул промптод
+ * гаргавал бот оноо асуух руу хазайна.
  */
-export function evaluateApplicant(programIdOrName, scores, options = {}) {
-  const program = findProgram(programIdOrName);
-  if (!program) {
-    return { ok: false, error: `"${programIdOrName}" гэсэн хөтөлбөр олдсонгүй.` };
-  }
-
-  const normalized = (Array.isArray(scores) ? scores : [])
-    .map((s) => ({
-      subject: String(s?.subject ?? '').trim(),
-      score: Number(s?.score),
-    }))
-    .filter((s) => s.subject && Number.isFinite(s.score));
-
-  // Оноо байхгүй байж болно — "30+" болон хоёр дахь мэргэжлийн хөтөлбөрт
-  // ЭЕШ шаардахгүй. Ийм үед босго хангаагүй гэж үзээд тооцоог үргэлжлүүлнэ.
-
-  // Бүлэг тус бүрийг шалгах: бүлэг доторх аль нэг хичээл босго давахад хангагдана
-  const groupResults = examGroupsFor(program).map((group) => {
-    const matching = normalized.filter((s) =>
-      group.subjects.some(
-        (subject) =>
-          subject.toLowerCase() === s.subject.toLowerCase() ||
-          s.subject.toLowerCase().includes(subject.toLowerCase()),
-      ),
-    );
-    const best = matching.reduce((a, b) => (!a || b.score > a.score ? b : a), null);
-    return {
-      subjects: group.subjects,
-      minScore: group.minScore,
-      met: Boolean(best && best.score >= group.minScore),
-      best,
-    };
-  });
-
-  // ⚠️ "Оноо өгөөгүй" ба "босго хангаагүй" хоёрыг ЯЛГАНА.
-  // Хэрэглэгч зарим хичээлийн оноогоо хэлээгүй байхад хангаагүй гэж үзвэл
-  // 100% эрхтэй элсэгчид 20% зарлаж, буруу мэдээлэл өгөх эрсдэлтэй.
-  const missingGroups = groupResults.filter((g) => !g.best);
-  const incomplete = normalized.length > 0 && missingGroups.length > 0;
-  const missingSubjects = missingGroups.flatMap((g) => g.subjects);
-
-  const qualified =
-    EXAM_RULE_MODE === 'any'
-      ? groupResults.some((g) => g.met)
-      : groupResults.every((g) => g.met);
-
-  const { best: incentive, eligible } = options.forceIncentive
-    ? { best: INCENTIVES[options.forceIncentive] ?? INCENTIVES.none, eligible: [] }
-    : determineIncentive({
-        ...options,
-        meetsEesh: qualified,
-        // Оноо огт өгөөгүй бол ЭЕШ өгөөгүй гэж үзнэ ("30+" хөтөлбөрт чухал)
-        hasEesh: normalized.length > 0,
-      });
-
-  const discountAmount = Math.round(TUITION.baseAnnual * incentive.rate);
-  const annualAfterDiscount = TUITION.baseAnnual - discountAmount;
-  const seatDeposit = TUITION.seatDeposit;
-
-  // Хураамж хөнгөлсөн дүнгээс хасагдах уу, эсвэл тусдаа төлөгдөх үү
-  const remainingBalance = incentive.depositDeductible
-    ? Math.max(0, annualAfterDiscount - seatDeposit)
-    : annualAfterDiscount;
-
-  // Элсэгчийн нийт төлөх дүн (хураамж оруулаад)
-  const totalPayable = incentive.depositDeductible
-    ? annualAfterDiscount
-    : annualAfterDiscount + seatDeposit;
-
-  const depositNote = incentive.depositDeductible
-    ? `${formatMnt(seatDeposit)} хураамж нь хөнгөлсөн дүнгээс хасагдана.`
-    : `${formatMnt(seatDeposit)} хураамж нь сургалтын төлбөрөөс тусдаа.`;
-
-  const summary =
-    `${program.name}: ${incentive.label} (${incentive.reason}). ` +
-    `Жилийн төлбөр ${formatMnt(TUITION.baseAnnual)} → ${formatMnt(annualAfterDiscount)}. ` +
-    depositNote;
-
-  return {
-    ok: true,
-    program,
-    qualified,
-    incomplete,
-    missingSubjects,
-    groupResults,
-    incentive,
-    eligibleIncentives: eligible,
-    baseAnnual: TUITION.baseAnnual,
-    discountAmount,
-    annualAfterDiscount,
-    seatDeposit,
-    depositDeductible: incentive.depositDeductible,
-    remainingBalance,
-    totalPayable,
-    depositNote,
-    summary,
-  };
-}
-
-/** Ботод харуулах хөтөлбөрийн жагсаалт (промптод оруулна) */
 export function programListText() {
   return PROGRAMS.map((p, i) => {
-    const groups = examGroupsFor(p)
-      .map((g) => `${g.subjects.join(' / ')} — ${g.minScore}+`)
-      .join('; ');
-    return `${i + 1}. ${p.name} (код ${p.code})${p.inDemand ? ' [ЭРЭЛТТЭЙ мэргэжил]' : ''}: ЭЕШ ${groups}`;
+    const demand = p.inDemand ? ' [ЭРЭЛТТЭЙ мэргэжил]' : '';
+    return `${i + 1}. ${p.name} (код ${p.code})${demand} — ${p.pitch}`;
   }).join('\n');
 }
