@@ -206,14 +206,15 @@ export async function handleEvent(event) {
 /**
  * Зураг, файл ирэхэд юу хийх вэ.
  *
- * Нэхэмжлэх үүссэний дараа ирсэн зураг бол төлбөрийн баримт байх магадлал
- * өндөр. Тэр тохиолдолд хүлээн авсныг баталгаажуулж, санхүү хянана гэдгийг
+ * Цаг товлосон буюу бүртгүүлсэн хүнээс ирсэн зураг бол төлбөрийн баримт байх
+ * магадлал өндөр. Тэр тохиолдолд хүлээн авсныг баталгаажуулж, санхүү хянана гэдгийг
  * хэлээд админд мэдэгдэнэ. AI дуудахгүй — тодорхой, тогтмол хариу өгнө.
  */
 async function handleAttachment(psid, attachments) {
   const hasImage = attachments.some((a) => a.type === 'image');
   const lead = await getLead(psid);
-  const awaitingPayment = ['invoice_created', 'receipt_sent', 'contact_saved'].includes(lead.stage);
+  const awaitingPayment = ['visit_booked', 'contact_saved', 'invoice_created', 'receipt_sent']
+    .includes(lead.stage);
 
   if (hasImage && awaitingPayment) {
     await saveLead(psid, { stage: 'receipt_sent' });
