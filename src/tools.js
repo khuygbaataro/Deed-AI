@@ -1,6 +1,7 @@
 import { config } from './config.js';
+import { HUMAN_PHONE } from './prompt.js';
 import { log, maskPsid } from './logger.js';
-import { notifyAdmins, passThreadControl, sendImage } from './messenger.js';
+import { notifyAdmins, passThreadControl, sendImage, sendText } from './messenger.js';
 import { setHandedOver } from './sessions.js';
 import { getLead, saveLead } from './leads.js';
 import {
@@ -440,18 +441,35 @@ export async function executeTool(call, ctx) {
 
       let handedOver = false;
       if (!ctx.offline) {
+        // ⚠️ ДАРААЛАЛ ЧУХАЛ. Thread control-ыг Page Inbox руу шилжүүлмэгц энэ
+        // апп мессеж илгээх эрхгүй болно ("(#10) another app is controlling
+        // this thread now"). Тиймээс хэрэглэгчид хэлэх үгийг ЭХЛЭЭД илгээж,
+        // ДАРАА НЬ шилжүүлнэ.
+        await sendText(
+          ctx.psid,
+          [
+            'Сургуулийн ажилтантай холбож өглөө.',
+            '',
+            'Тэд энэ чатаар удахгүй хариулна. Яаралтай бол ' + HUMAN_PHONE + ' руу залгаарай.',
+          ].join(String.fromCharCode(10)),
+        );
+
         handedOver = await passThreadControl(ctx.psid, input.summary);
         await setHandedOver(ctx.psid, handedOver);
         await notifyAdmins(
-          `🔔 ${REASON_LABELS[input.reason] ?? input.reason}\n\n${input.summary}\n\n` +
-            (handedOver ? 'Яриа Page Inbox руу шилжсэн.' : 'Анхаар: гараар хариулна уу.'),
+          [
+            '🔔 ' + (REASON_LABELS[input.reason] ?? input.reason),
+            input.summary,
+            handedOver ? 'Яриа Page Inbox руу шилжсэн.' : 'Анхаар: гараар хариулна уу.',
+          ].join(String.fromCharCode(10)),
         );
       }
 
       return {
         handedOver,
         content: handedOver
-          ? 'Амжилттай шилжүүллээ. Ажилтан удахгүй хариулна гэдгийг товч мэдэгд.'
+          ? 'Шилжүүллээ. Хэрэглэгчид мэдэгдэх мессеж АЛЬ ХЭДИЙН илгээгдсэн — ' +
+            'дахин юу ч бичих ШААРДЛАГАГҮЙ. Маш богино хариу буцаа.'
           : 'Хүсэлт бүртгэгдлээ. Ажилтан Messenger-ээр эргэн холбогдоно гэж хэлээд, ' +
             'сургуулийн утсаар шууд холбогдох боломжтойг сануул.',
       };

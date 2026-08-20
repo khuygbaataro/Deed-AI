@@ -285,7 +285,11 @@ async function respondToTurn(psid, userText) {
     await saveSession(psid, session);
 
     await sendSenderAction(psid, 'typing_off');
-    await sendText(psid, result.text);
+    // Ажилтан руу шилжүүлсэн бол мессежийг хэрэгсэл аль хэдийн илгээсэн.
+    // Дахин илгээвэл Facebook татгалзана — thread control өөр апп-д шилжсэн.
+    if (!result.handedOver) {
+      await sendText(psid, result.text);
+    }
   } catch (err) {
     log.error('Хариу үүсгэхэд алдаа', { psid: maskPsid(psid), error: err.message });
     await recordEvent('send_error', { psid, question: userText, detail: err.message });
