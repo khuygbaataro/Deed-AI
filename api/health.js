@@ -10,7 +10,7 @@ import { loadKnowledge } from '../src/knowledge.js';
 import { stats as storeStats } from '../src/sessions.js';
 import { kvPing } from '../src/store.js';
 import { countLeads, listLeads } from '../src/leads.js';
-import { eventCounts } from '../src/events.js';
+import { eventCounts, lastAiError } from '../src/events.js';
 import { todayUsage } from '../src/usage.js';
 
 export async function GET() {
@@ -19,6 +19,7 @@ export async function GET() {
 
   // Тоо баримт — хувийн мэдээлэл БИШ, зөвхөн тоо
   const usage = await todayUsage().catch(() => null);
+  const aiError = await lastAiError().catch(() => null);
   let stats = null;
   try {
     const [total, leads, events] = await Promise.all([
@@ -48,6 +49,8 @@ export async function GET() {
     store: { ...storeStats(), ping },
     data: stats,
     usageToday: usage,
+    // Сүүлийн AI алдаа — загвар/түлхүүр буруу эсэхийг шууд харуулна
+    lastAiError: aiError,
     knowledge: { files: kb.files, bytes: kb.bytes },
     // Дутуу тохиргоо — зөвхөн нэрс, утга харуулахгүй
     missingConfig: missingConfig(),

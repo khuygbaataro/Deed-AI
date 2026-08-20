@@ -49,6 +49,18 @@ export async function recordEvent(type, data = {}) {
 }
 
 /**
+ * Сүүлийн AI алдааны техникийн тайлбар.
+ * ЗӨВХӨН огноо, алдааны текст — хувийн мэдээлэл буцаахгүй тул
+ * ил задгай /health хуудсанд харуулахад аюулгүй.
+ * @returns {Promise<{ts: string, detail: string|null}|null>}
+ */
+export async function lastAiError() {
+  const list = (await kvGet(KEY)) ?? [];
+  const hit = list.find((ev) => ev.type === 'ai_error');
+  return hit ? { ts: hit.ts, detail: hit.detail } : null;
+}
+
+/**
  * Сүүлийн үйл явдлуудыг авах.
  * @param {number} limit
  * @returns {Promise<Array>}
