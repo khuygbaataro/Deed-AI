@@ -258,7 +258,7 @@ export async function GET(request) {
   const total = await countLeads();
   const filter = url.searchParams.get('filter');
   const leads = filter === 'registered' ? all.filter(isRegistered) : all;
-  const events = await listEvents(40);
+  const events = await listEvents(150);
 
   if (url.searchParams.get('format') === 'csv') {
     return new Response(`﻿${toCsv(leads)}`, {

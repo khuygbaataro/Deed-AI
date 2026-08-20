@@ -101,9 +101,23 @@ export async function GET(request) {
     result.healthy = apps.length > 0 && result.missingFields.length === 0;
   }
 
-  result.hint = result.healthy
-    ? 'Захиалга хэвийн. Мессеж ирэхгүй бол Facebook апп-ын горим (Live/Development) болон тестерийн эрхийг шалгана уу.'
-    : 'Захиалга дутуу байна. Засахын тулд энэ хаягийн төгсгөлд ?fix=1 нэмж дахин нээнэ үү.';
+  // Захиалгыг УНШИХАД pages_manage_metadata эрх хэрэгтэй. Тэр эрхгүй байсан ч
+  // захиалга ӨӨРӨӨ хэвийн ажиллаж болно — уншилтын алдааг "дутуу" гэж
+  // андуурч мэдээлэхгүй.
+  const readFailed = Boolean(result.subscription?.error);
+  if (result.resubscribe?.ok) {
+    result.hint =
+      'Захиалга амжилттай шинэчлэгдлээ. Messenger-ээс нэг мессеж бичээд шалгана уу.';
+  } else if (readFailed) {
+    result.hint =
+      'Захиалгыг УНШИХ эрх (pages_manage_metadata) дутуу байна. Энэ нь захиалга ' +
+      'ажиллахгүй гэсэн үг БИШ — зөвхөн жагсаалтыг харах боломжгүй. Мессеж ирж ' +
+      'байгаа бол бүх зүйл хэвийн. Эргэлзвэл ?fix=1 нэмж дахин захиална уу.';
+  } else {
+    result.hint = result.healthy
+      ? 'Захиалга хэвийн. Мессеж ирэхгүй бол Facebook апп-ын горимыг шалгана уу.'
+      : 'Захиалга дутуу байна. Энэ хаягийн төгсгөлд ?fix=1 нэмж дахин нээнэ үү.';
+  }
 
   return Response.json(result, {
     headers: { 'Cache-Control': 'no-store' },
