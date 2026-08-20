@@ -5,22 +5,17 @@ import { notifyAdmins, passThreadControl, sendImage, sendText } from './messenge
 import { setHandedOver } from './sessions.js';
 import { getLead, saveLead } from './leads.js';
 import {
-  BANK_ACCOUNT,
   FIRST_YEAR_CONDITION,
   PROGRAMS,
-  TRACKS,
   TUITION,
   findProgram,
   formatMnt,
   VISIT,
   findTrack,
-  isBankConfigured,
   overviewImageUrl,
   programImageUrl,
 } from './admissions.js';
 
-import { createInvoice, isQpayConfigured } from './qpay.js';
-import { kvSet } from './store.js';
 import { recordEvent } from './events.js';
 
 const PROGRAM_NAMES = PROGRAMS.map((p) => p.name);
@@ -112,25 +107,6 @@ export const TOOLS = [
     },
   },
   {
-    name: 'create_seat_invoice',
-    description:
-      `Суудал баталгаажуулах ${formatMnt(TUITION.seatDeposit)} хураамжийн төлбөрийн ` +
-      'мэдээллийг (банкны данс эсвэл QPay нэхэмжлэх) бэлтгэнэ. Зөвхөн хэрэглэгч суудлаа ' +
-      'баталгаажуулахыг ТОДОРХОЙ зөвшөөрсний дараа дуудна. Өмнө нь нэр, утас бүртгэгдсэн байх ёстой.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        confirmed: {
-          type: 'boolean',
-          description: 'Хэрэглэгч суудлаа баталгаажуулахыг тодорхой зөвшөөрсөн эсэх',
-        },
-      },
-      required: ['confirmed'],
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'book_school_visit',
     description:
       'Элсэгчийг сургууль дээр ирж бүртгүүлэх ЦАГИЙГ ТОВЛОНО. Энэ бол элсэлтийн ' +
@@ -200,21 +176,6 @@ export const TOOLS = [
     },
   },
 ];
-
-/** Суудал авсан элсэгчийн бүрэн мэдээллийг админд илгээх текст */
-function seatNotice(lead, extra = '') {
-  return [
-    '🎟 СУУДАЛ ЗАХИАЛГА',
-    `Нэр: ${lead.name ?? '-'}`,
-    `Нас: ${lead.age ?? '-'}`,
-    `Утас: ${lead.phone ?? '-'}`,
-    `И-мэйл: ${lead.email ?? '-'}`,
-    `Мэргэжил: ${lead.programName ?? '-'}`,
-    `Урсгал: ${lead.trackName ?? '-'}`,
-    `Хураамж: ${formatMnt(TUITION.seatDeposit)}`,
-    extra,
-  ].filter(Boolean).join(String.fromCharCode(10));
-}
 
 const REASON_LABELS = {
   user_requested: 'Хэрэглэгч хүсэлт гаргасан',
@@ -331,121 +292,6 @@ export async function executeTool(call, ctx) {
     }
 
     // ─── QPay нэхэмжлэх ────────────────────────────────────────────────
-    if (name === 'create_seat_invoice') {
-      if (!input.confirmed) {
-        return {
-          content: 'Хэрэглэгч хараахан зөвшөөрөөгүй байна. Эхлээд тодорхой зөвшөөрлийг ав.',
-          isError: true,
-        };
-      }
-
-      const lead = await getLead(ctx.psid);
-      if (!lead.name || !lead.phone) {
-        return {
-          content:
-            'Нэр, утас бүртгэгдээгүй байна. Эхлээд save_contact_info хэрэгслээр бүртгэ.',
-          isError: true,
-        };
-      }
-
-      const senderInvoiceNo = `SEDS-${Date.now()}-${String(ctx.psid).slice(-6)}`;
-      const description = `Суудал баталгаажуулах хураамж — ${lead.programName ?? 'элсэлт'} (${lead.name})`;
-
-      // Банкны шилжүүлэг — гүйлгээний утга нь элсэгчийн нэр
-      const bankBlock = isBankConfigured()
-        ? `Банк: ${BANK_ACCOUNT.bankName}
-Данс: ${BANK_ACCOUNT.accountNumber}
-` +
-          (BANK_ACCOUNT.iban ? `IBAN: ${BANK_ACCOUNT.iban}
-` : '') +
-          `Хүлээн авагч: ${BANK_ACCOUNT.accountName}
-Дүн: ${formatMnt(TUITION.seatDeposit)}
-` +
-          `Гүйлгээний утга: ${lead.name}`
-        : null;
-
-      if (!isQpayConfigured()) {
-        await saveLead(ctx.psid, {
-          stage: 'invoice_created',
-          invoice: { senderInvoiceNo, amount: TUITION.seatDeposit, manual: true, createdAt: new Date().toISOString() },
-        });
-        if (!ctx.offline) {
-          await notifyAdmins(seatNotice(lead, 'Төлбөр: банкны шилжүүлгээр хүлээгдэж байна'));
-        }
-        if (bankBlock) {
-          return {
-            content:
-              `Төлбөрийн мэдээллийг хэрэглэгчид доорх байдлаар БҮТНЭЭР нь дамжуул:
-
-` +
-              `${bankBlock}
-
-` +
-              `Гүйлгээний утгад элсэгчийн нэрийг ЗААВАЛ бичих ёстойг онцлон хэл — ` +
-              `үүгээр төлбөрийг тухайн хүүхэдтэй тулгана. Төлсний дараа баримтаа ` +
-              `энэ чатад илгээхийг хүс.`,
-          };
-        }
-
-        return {
-          content:
-            'Төлбөрийн суваг хараахан тохируулаагүй байна. Хэрэглэгчид элсэлтийн ' +
-            'албанаас төлбөрийн мэдээлэл авахыг санал болгоод, ажилтан удахгүй ' +
-            'холбогдоно гэж хэл. Хүсэлт бүртгэгдсэн.',
-        };
-      }
-
-      const invoice = await createInvoice({
-        senderInvoiceNo,
-        receiverCode: lead.phone,
-        amount: TUITION.seatDeposit,
-        description,
-      });
-
-      if (!invoice.ok) {
-        return {
-          content:
-            'Нэхэмжлэх үүсгэхэд алдаа гарлаа. Хэрэглэгчээс уучлалт гуйж, ажилтан ' +
-            'холбогдоно гэж хэл. Дахин оролдох шаардлагагүй.',
-          isError: true,
-        };
-      }
-
-      await saveLead(ctx.psid, {
-        stage: 'invoice_created',
-        invoice: {
-          senderInvoiceNo,
-          invoiceId: invoice.invoiceId,
-          amount: TUITION.seatDeposit,
-          shortUrl: invoice.shortUrl,
-          createdAt: new Date().toISOString(),
-          paidAt: null,
-        },
-      });
-
-      // Callback ирэхэд нэхэмжлэхийг хэрэглэгчтэй нь холбохын тулд
-      await kvSet(
-        `invoice:${senderInvoiceNo}`,
-        { psid: ctx.psid, invoiceId: invoice.invoiceId },
-        30 * 24 * 60 * 60,
-      );
-
-      const links = [invoice.shortUrl, ...(invoice.urls ?? []).slice(0, 3).map((u) => u.link)]
-        .filter(Boolean)
-        .join('\n');
-
-      if (!ctx.offline) {
-        await notifyAdmins(seatNotice(lead, `Нэхэмжлэх №${senderInvoiceNo}`));
-      }
-
-      return {
-        content:
-          `Нэхэмжлэх амжилттай үүслээ. Дүн: ${formatMnt(TUITION.seatDeposit)}. ` +
-          `Хэрэглэгчид доорх холбоосыг бүтнээр нь дамжуул:\n${links}\n` +
-          `Төлбөр төлсний дараа элсэлтийн алба холбогдоно гэж хэл.`,
-      };
-    }
-
     // ─── Сургууль дээр ирэх цаг товлох ─────────────────────────────────
     if (name === 'book_school_visit') {
       const lead = await getLead(ctx.psid);
