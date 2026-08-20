@@ -21,6 +21,12 @@ const str = (v, dflt = undefined) => {
   return trimmed === '' ? dflt : trimmed;
 };
 
+/** Нийлүүлэгч тус бүрийн өгөгдмөл загвар */
+function defaultModel() {
+  const provider = (str(process.env.AI_PROVIDER, 'anthropic') || 'anthropic').toLowerCase();
+  return provider === 'openai' ? null : 'claude-sonnet-5';
+}
+
 export const config = {
   // --- Сервер ---
   port: num(process.env.PORT, 3000),
@@ -39,12 +45,24 @@ export const config = {
     skipSignatureCheck: bool(process.env.FB_SKIP_SIGNATURE_CHECK, false),
   },
 
+  // --- AI нийлүүлэгч ---
+  // anthropic (өгөгдмөл) | openai
+  provider: (str(process.env.AI_PROVIDER, 'anthropic') || 'anthropic').toLowerCase(),
+
+  // --- OpenAI (AI_PROVIDER=openai үед) ---
+  openai: {
+    apiKey: str(process.env.OPENAI_API_KEY),
+    baseUrl: str(process.env.OPENAI_BASE_URL, 'https://api.openai.com/v1'),
+  },
+
   // --- Claude ---
   // Тэмдэглэл: хувьсагчийг BOT_ угтвартай нэрлэсэн. CLAUDE_* нэрс нь
   // Claude Code зэрэг хэрэгслийн орчны хувьсагчтай мөргөлдөж болзошгүй.
   claude: {
     apiKey: str(process.env.ANTHROPIC_API_KEY),
-    model: str(process.env.BOT_MODEL, 'claude-haiku-4-5-20251001'),
+    // BOT_MODEL нь ИДЭВХТЭЙ нийлүүлэгчид хамаарна. Тохируулаагүй бол
+    // Anthropic дээр Sonnet 5 хэрэглэнэ; OpenAI дээр заавал өөрөө зааж өгнө.
+    model: str(process.env.BOT_MODEL, defaultModel()),
     // low | medium | high | xhigh | max — чатбот учир хурдыг эрхэмлэж low
     effort: str(process.env.BOT_EFFORT, 'low'),
     maxTokens: num(process.env.BOT_MAX_TOKENS, 1500),
@@ -75,7 +93,13 @@ export const config = {
  */
 export function missingConfig({ requireFacebook = true } = {}) {
   const missing = [];
-  if (!config.claude.apiKey) missing.push('ANTHROPIC_API_KEY');
+  if (config.provider === 'openai') {
+    if (!config.openai.apiKey) missing.push('OPENAI_API_KEY');
+    // OpenAI дээр өгөгдмөл загвар байхгүй — заавал зааж өгнө
+    if (!config.claude.model) missing.push('BOT_MODEL');
+  } else if (!config.claude.apiKey) {
+    missing.push('ANTHROPIC_API_KEY');
+  }
   if (requireFacebook) {
     if (!config.fb.verifyToken) missing.push('FB_VERIFY_TOKEN');
     if (!config.fb.pageAccessToken) missing.push('FB_PAGE_ACCESS_TOKEN');

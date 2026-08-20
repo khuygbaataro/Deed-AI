@@ -1,6 +1,6 @@
 import { config } from './config.js';
 import { log, maskPsid } from './logger.js';
-import { generateReply } from './claude.js';
+import { generateReply } from './ai.js';
 import { GREETING, PAYLOAD_PROMPTS } from './prompt.js';
 import { getUserProfile, sendSenderAction, sendText } from './messenger.js';
 import { getSession, resetSession, saveSession, setHandedOver } from './sessions.js';

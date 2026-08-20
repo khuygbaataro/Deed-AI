@@ -1,18 +1,28 @@
+/**
+ * Anthropic (Claude) нийлүүлэгч.
+ *
+ * Хэрэгслийн давталтыг (tool_use -> tool_result) гараар удирдана — ингэснээр
+ * handover зэрэг гаж нөлөөтэй үйлдлийг PSID-тэй нь холбож хянах боломжтой.
+ */
 import Anthropic from '@anthropic-ai/sdk';
-import { config } from './config.js';
-import { log, maskPsid } from './logger.js';
-import { buildSystemPrompt } from './prompt.js';
-import { TOOLS, executeTool } from './tools.js';
-import { recordEvent } from './events.js';
-import { recordUsage } from './usage.js';
+import { config } from '../config.js';
+import { log, maskPsid } from '../logger.js';
+import { buildSystemPrompt } from '../prompt.js';
+import { TOOLS, executeTool } from '../tools.js';
+import { recordEvent } from '../events.js';
+import { recordUsage } from '../usage.js';
+import { FALLBACK_TEXT, REFUSAL_TEXT, isClaude5 } from './shared.js';
+
+export const name = 'anthropic';
 
 let client = null;
 
-/**
- * adaptive thinking болон output_config.effort нь Claude 5 гэр бүлийн боломж.
- * Haiku 4.5 зэрэг өмнөх загварт илгээвэл API 400 алдаа буцаана.
- */
-const isClaude5 = (model) => /^claude-(opus|sonnet|haiku|fable)-5/.test(model);
+function getClient() {
+  if (!client) {
+    client = new Anthropic(config.claude.apiKey ? { apiKey: config.claude.apiKey } : {});
+  }
+  return client;
+}
 
 /**
  * Хэрэгслийн жагсаалтыг загварт тохируулна.
@@ -24,26 +34,6 @@ function toolsFor(model) {
   return TOOLS.map(({ strict, ...rest }) => rest);
 }
 
-/**
- * Claude client-ийг эхний дуудлагад үүсгэнэ.
- * API түлхүүргүй үед сервер асахдаа унахгүй байх зорилготой.
- */
-function getClient() {
-  if (!client) {
-    client = new Anthropic(config.claude.apiKey ? { apiKey: config.claude.apiKey } : {});
-  }
-  return client;
-}
-
-const FALLBACK_TEXT =
-  'Уучлаарай, техникийн саатал гарлаа. Түр хүлээгээд дахин бичнэ үү, ' +
-  'эсвэл сургуулийн утсаар шууд холбогдоорой.';
-
-const REFUSAL_TEXT =
-  'Уучлаарай, энэ асуултад хариулах боломжгүй байна. ' +
-  'Сургуулийн элсэлт, хөтөлбөр, төлбөрийн талаар асуувал баяртайгаар хариулна.';
-
-/** Хариултаас текст блокуудыг цуглуулна */
 function collectText(content) {
   return content
     .filter((block) => block.type === 'text')
@@ -52,22 +42,10 @@ function collectText(content) {
     .trim();
 }
 
-/**
- * Хэрэглэгчийн мессежид Claude-ээр хариулт үүсгэнэ.
- * Хэрэгслийн давталтыг (tool_use -> tool_result) энд гараар удирдана —
- * ингэснээр handover зэрэг гаж нөлөөтэй үйлдлийг PSID-тэй нь холбож хянах боломжтой.
- *
- * @param {object} params
- * @param {Array} params.history Өмнөх ярианы messages массив (өөрчлөгдөнө)
- * @param {string} params.userText Хэрэглэгчийн шинэ мессеж
- * @param {string} params.psid
- * @param {string|null} [params.userName]
- * @param {boolean} [params.offline] true бол Facebook руу юу ч илгээхгүй (локал тест)
- * @returns {Promise<{text: string, handedOver: boolean, messages: Array}>}
- */
 export async function generateReply({ history, userText, psid, userName = null, offline = false }) {
   const system = await buildSystemPrompt();
   const messages = [...history, { role: 'user', content: userText }];
+  const model = config.claude.model;
 
   let handedOver = false;
 
@@ -75,18 +53,17 @@ export async function generateReply({ history, userText, psid, userName = null, 
     let response;
     try {
       response = await getClient().messages.create({
-        model: config.claude.model,
+        model,
         max_tokens: config.claude.maxTokens,
         // Систем промпт тогтмол тул кэшлэнэ — давтагдсан хүсэлтүүд ~90% хямд болно
         // ttl: '1h' — өгөгдмөл 5 минут нь сийрэг урсгалд байнга алдагддаг.
-        // Бичих нь 2x үнэтэй ч 12 дахин удаан хадгалагдана.
         system: [
           { type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } },
         ],
-        ...(isClaude5(config.claude.model)
+        ...(isClaude5(model)
           ? { thinking: { type: 'adaptive' }, output_config: { effort: config.claude.effort } }
           : {}),
-        tools: toolsFor(config.claude.model),
+        tools: toolsFor(model),
         messages,
       });
     } catch (err) {
@@ -103,7 +80,7 @@ export async function generateReply({ history, userText, psid, userName = null, 
       return { text: FALLBACK_TEXT, handedOver, messages: history };
     }
 
-    await recordUsage(config.claude.model, response.usage);
+    await recordUsage(model, response.usage);
 
     log.debug('Claude хариу', {
       psid: maskPsid(psid),
@@ -111,10 +88,8 @@ export async function generateReply({ history, userText, psid, userName = null, 
       in: response.usage?.input_tokens,
       out: response.usage?.output_tokens,
       cacheRead: response.usage?.cache_read_input_tokens,
-      cacheWrite: response.usage?.cache_creation_input_tokens,
     });
 
-    // Аюулгүй байдлын шүүлтүүр татгалзсан тохиолдол
     if (response.stop_reason === 'refusal') {
       log.warn('Claude татгалзлаа', {
         psid: maskPsid(psid),
@@ -126,15 +101,9 @@ export async function generateReply({ history, userText, psid, userName = null, 
     messages.push({ role: 'assistant', content: response.content });
 
     if (response.stop_reason !== 'tool_use') {
-      const text = collectText(response.content);
-      return {
-        text: text || FALLBACK_TEXT,
-        handedOver,
-        messages,
-      };
+      return { text: collectText(response.content) || FALLBACK_TEXT, handedOver, messages };
     }
 
-    // Хэрэгслүүдийг гүйцэтгээд үр дүнг нэг user мессежээр буцаана
     const toolUses = response.content.filter((block) => block.type === 'tool_use');
     const results = [];
 

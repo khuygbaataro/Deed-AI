@@ -20,7 +20,8 @@ const PRICING = {
   'claude-haiku-4-5-20251001': { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
 };
 
-const DEFAULT_PRICING = PRICING['claude-sonnet-5'];
+/** Үнэ нь мэдэгдэхгүй загварын зардлыг ЗОХИОХГҮЙ — 0 гэж бүртгээд тусад нь тоолно */
+export const hasPricing = (model) => Boolean(PRICING[model]);
 const TTL_SECONDS = 60 * 24 * 60 * 60; // 60 хоног
 
 const dayKey = () => `usage:${new Date().toISOString().slice(0, 10)}`;
@@ -32,7 +33,8 @@ const dayKey = () => `usage:${new Date().toISOString().slice(0, 10)}`;
  *          cache_creation_input_tokens?: number, cache_read_input_tokens?: number}} usage
  */
 export function estimateCost(model, usage = {}) {
-  const price = PRICING[model] ?? DEFAULT_PRICING;
+  const price = PRICING[model];
+  if (!price) return 0; // үнэ мэдэгдэхгүй бол таамаглахгүй
   const input = usage.input_tokens ?? 0;
   const output = usage.output_tokens ?? 0;
   const cacheWrite = usage.cache_creation_input_tokens ?? 0;
@@ -85,6 +87,7 @@ export async function recordUsage(model, usage = {}) {
     };
 
     current.calls += 1;
+    if (!hasPricing(model)) current.unpricedCalls = (current.unpricedCalls ?? 0) + 1;
     if (cacheHit) current.cacheHits += 1;
     else current.cacheMisses += 1;
     current.inputTokens += freshInput;
@@ -110,6 +113,10 @@ export async function todayUsage() {
   const hitRate = data.calls ? Math.round((data.cacheHits / data.calls) * 100) : 0;
   return {
     ...data,
+    // Үнэ нь тодорхойгүй загвар байвал usd нь ДУТУУ гэдгийг ил хэлнэ
+    ...(data.unpricedCalls
+      ? { usdNote: data.unpricedCalls + ' дуудлагын үнэ тодорхойгүй — usd дутуу тоологдсон' }
+      : {}),
     cacheHitRate: `${hitRate}%`,
     usdPerCall: data.calls ? Number((data.usd / data.calls).toFixed(5)) : 0,
   };

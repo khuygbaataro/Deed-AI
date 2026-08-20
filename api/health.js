@@ -42,6 +42,7 @@ export async function GET() {
     status: 'ok',
     // Ямар хувилбар байршсаныг шалгахад — засвар хүрсэн эсэхийг мэднэ
     commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? 'local').slice(0, 7),
+    provider: config.provider,
     model: config.claude.model,
     effort: config.claude.effort,
     store: { ...storeStats(), ping },

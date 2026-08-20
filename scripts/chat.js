@@ -6,7 +6,7 @@
 import readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { config, missingConfig } from '../src/config.js';
-import { generateReply } from '../src/claude.js';
+import { generateReply } from '../src/ai.js';
 import { loadKnowledge } from '../src/knowledge.js';
 import { GREETING } from '../src/prompt.js';
 
