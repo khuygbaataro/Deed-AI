@@ -26,6 +26,10 @@
     {
       "source": "/fb-status",
       "destination": "/api/fb-status"
+    },
+    {
+      "source": "/ai-check",
+      "destination": "/api/ai-check"
     }
   ]
 }

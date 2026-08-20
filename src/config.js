@@ -44,7 +44,7 @@ export const config = {
   // Claude Code зэрэг хэрэгслийн орчны хувьсагчтай мөргөлдөж болзошгүй.
   claude: {
     apiKey: str(process.env.ANTHROPIC_API_KEY),
-    model: str(process.env.BOT_MODEL, 'claude-sonnet-5'),
+    model: str(process.env.BOT_MODEL, 'claude-haiku-4-5-20251001'),
     // low | medium | high | xhigh | max — чатбот учир хурдыг эрхэмлэж low
     effort: str(process.env.BOT_EFFORT, 'low'),
     maxTokens: num(process.env.BOT_MAX_TOKENS, 1500),

@@ -9,6 +9,22 @@ import { recordUsage } from './usage.js';
 let client = null;
 
 /**
+ * adaptive thinking болон output_config.effort нь Claude 5 гэр бүлийн боломж.
+ * Haiku 4.5 зэрэг өмнөх загварт илгээвэл API 400 алдаа буцаана.
+ */
+const isClaude5 = (model) => /^claude-(opus|sonnet|haiku|fable)-5/.test(model);
+
+/**
+ * Хэрэгслийн жагсаалтыг загварт тохируулна.
+ * strict: true нь Claude 5 гэр бүлийн боломж — өмнөх загварт илгээвэл
+ * хүсэлт бүхэлдээ 400 алдаа болно.
+ */
+function toolsFor(model) {
+  if (isClaude5(model)) return TOOLS;
+  return TOOLS.map(({ strict, ...rest }) => rest);
+}
+
+/**
  * Claude client-ийг эхний дуудлагад үүсгэнэ.
  * API түлхүүргүй үед сервер асахдаа унахгүй байх зорилготой.
  */
@@ -67,9 +83,10 @@ export async function generateReply({ history, userText, psid, userName = null, 
         system: [
           { type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } },
         ],
-        thinking: { type: 'adaptive' },
-        output_config: { effort: config.claude.effort },
-        tools: TOOLS,
+        ...(isClaude5(config.claude.model)
+          ? { thinking: { type: 'adaptive' }, output_config: { effort: config.claude.effort } }
+          : {}),
+        tools: toolsFor(config.claude.model),
         messages,
       });
     } catch (err) {
