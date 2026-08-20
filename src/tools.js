@@ -11,12 +11,16 @@ import {
   findProgram,
   formatMnt,
   VISIT,
+  REGISTRATION,
+  WORKING_WEEKDAYS,
+  BANK_ACCOUNT,
   findTrack,
   overviewImageUrl,
   programImageUrl,
 } from './admissions.js';
 
 import { recordEvent } from './events.js';
+import { format as formatDate, resolveDay, weekdayIndex } from './dates.js';
 
 const PROGRAM_NAMES = PROGRAMS.map((p) => p.name);
 
@@ -98,21 +102,49 @@ export const TOOLS = [
       type: 'object',
       properties: {
         full_name: { type: 'string', description: 'Овог нэр' },
-        age: { type: 'number', description: 'Элсэгчийн нас. Хэлээгүй бол 0.' },
+        age: {
+          type: 'number',
+          description: 'Элсэгчийн нас. АСУУХ ШААРДЛАГАГҮЙ — өөрөө хэлээгүй бол 0.',
+        },
         phone: { type: 'string', description: 'Утасны дугаар' },
-        email: { type: 'string', description: 'Gmail хаяг. Хэлээгүй бол хоосон мөр.' },
+        email: {
+          type: 'string',
+          description:
+            'Gmail хаяг. ЗӨВХӨН онлайн гэрээний үед шаардлагатай. ' +
+            'Биеэр ирэх бол асуухгүй — хоосон мөр илгээ.',
+        },
       },
       required: ['full_name', 'age', 'phone', 'email'],
       additionalProperties: false,
     },
   },
   {
+    name: 'set_registration_mode',
+    description:
+      'Элсэгч суудлаа ЯАЖ баталгаажуулахаа шийдсэн үед дуудна. ' +
+      'in_person = сургууль дээр ирж бүртгүүлнэ (бэлнээр). ' +
+      'online = онлайнаар гэрээ байгуулж, дансаар шилжүүлнэ. ' +
+      'Хэрэглэгч өөрөө сонгосны ДАРАА дуудна — өмнө нь биш.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        mode: {
+          type: 'string',
+          enum: ['in_person', 'online'],
+          description: 'Элсэгчийн сонгосон зам',
+        },
+      },
+      required: ['mode'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'book_school_visit',
     description:
-      'Элсэгчийг сургууль дээр ирж бүртгүүлэх ЦАГИЙГ ТОВЛОНО. Энэ бол элсэлтийн ' +
-      'эцсийн алхам — онлайн төлбөр биш, биечлэн ирж бүртгүүлнэ. ' +
-      'Хэрэглэгч ирэх өдөр, цагаа хэлсний дараа дуудна. Өмнө нь нэр, утас ' +
-      'бүртгэгдсэн байх ёстой.',
+      'Элсэгчийг сургууль дээр ирж бүртгүүлэх ЦАГИЙГ ТОВЛОНО. Хэрэглэгч ирэх ' +
+      'ӨДӨР, ЦАГ хоёуланг нь хэлсний дараа дуудна. Нэр, утсыг ДАРАА нь авна — ' +
+      'энд шаардахгүй. Ажлын өдөр (Даваа-Баасан) л боломжтой.',
     strict: true,
     input_schema: {
       type: 'object',
@@ -278,57 +310,125 @@ export async function executeTool(call, ctx) {
         stage: 'contact_saved',
       });
 
-      if (!ctx.offline) {
-        const lead = await getLead(ctx.psid);
-        // Цаг аль хэдийн товлогдсон бол БҮРЭН тайланг илгээнэ — элсэлтийн
-        // ажилтан үүнийг хэвлээд шууд ашиглана.
-        if (lead.visit) {
-          await notifyAdmins(
-            [
-              '✅ ЭЛСЭГЧ БҮРЭН БҮРТГЭГДЛЭЭ',
-              'Нэр: ' + (lead.name ?? '-'),
-              'Нас: ' + (lead.age ?? '-'),
-              'Утас: ' + (lead.phone ?? '-'),
-              'И-мэйл: ' + (lead.email ?? '-'),
-              'Мэргэжил: ' + (lead.programName ?? '-'),
-              'Урсгал: ' + (lead.trackName ?? '-'),
-              'ИРЭХ: ' + lead.visit.day + ' ' + lead.visit.time,
-              'Хураамж: ' + formatMnt(TUITION.seatDeposit) + ' (бэлнээр)',
-            ].join(String.fromCharCode(10)),
-          );
-          return {
-            content:
-              'Бүх мэдээлэл бүртгэгдэж, элсэлтийн албанд БҮРЭН тайлан очлоо. ' +
-              'Хэрэглэгчид товлосон өдөр, цаг, хаяг, бэлнээр авчрах дүнг давтаж хэлээд ' +
-              'яриаг эелдэг дуусга.',
-          };
-        }
+      const lead = await getLead(ctx.psid);
+      const online = lead.registrationMode === 'online';
+      const complete = Boolean(lead.name && lead.phone && (online ? lead.email : lead.visit));
+
+      // Бүртгэл бүрдсэн бол элсэлтийн ажилтанд БҮРЭН тайлан илгээнэ —
+      // тэр хүн үүнийг хэвлээд шууд ашиглана.
+      if (!ctx.offline && complete) {
         await notifyAdmins(
-          `📇 Шинэ элсэгч\nНэр: ${input.full_name}\nНас: ${input.age || '-'}\n` +
-            `Утас: ${input.phone}\nGmail: ${input.email || '-'}\n` +
-            `Мэргэжил: ${lead.programName ?? '-'}`,
+          [
+            online ? '💻 ОНЛАЙН БҮРТГЭЛ БҮРДЛЭЭ' : '✅ ЭЛСЭГЧ БҮРЭН БҮРТГЭГДЛЭЭ',
+            'Нэр: ' + (lead.name ?? '-'),
+            'Утас: ' + (lead.phone ?? '-'),
+            ...(lead.age ? ['Нас: ' + lead.age] : []),
+            ...(lead.email ? ['И-мэйл: ' + lead.email] : []),
+            'Мэргэжил: ' + (lead.programName ?? '-'),
+            'Урсгал: ' + (lead.trackName ?? '-'),
+            online
+              ? 'ЗАМ: онлайн гэрээ + дансаар шилжүүлэг'
+              : 'ИРЭХ: ' + (lead.visit?.label ?? '-') + ', ' + (lead.visit?.time ?? '-'),
+            'Хураамж: ' + formatMnt(TUITION.seatDeposit) +
+              (online ? ' (дансаар)' : ' (бэлнээр)'),
+          ].join(String.fromCharCode(10)),
+        );
+      } else if (!ctx.offline) {
+        await notifyAdmins(
+          '📇 Шинэ холбоо барих мэдээлэл' + String.fromCharCode(10) +
+            'Нэр: ' + input.full_name + String.fromCharCode(10) +
+            'Утас: ' + input.phone + String.fromCharCode(10) +
+            'Мэргэжил: ' + (lead.programName ?? '-'),
         );
       }
 
+      if (complete) {
+        return {
+          content: online
+            ? [
+                'Бүх мэдээлэл бүртгэгдэж, элсэлтийн албанд БҮРЭН тайлан очлоо.',
+                'Одоо яриаг дуусга: гэрээг gmail хаягаар нь илгээхийг хэл,',
+                BANK_ACCOUNT.bankName + ' данс ' + BANK_ACCOUNT.accountNumber +
+                  ' (' + BANK_ACCOUNT.accountName + ') руу ' +
+                  formatMnt(TUITION.seatDeposit) + ' шилжүүлэхийг сануул.',
+                'Төгсгөлд нь ирээдүйнхээ төлөө шийдвэр гаргасанд нь ДУЛААХАН',
+                'баяр хүргэ — emoji хэрэглэ.',
+              ].join(' ')
+            : [
+                'Бүх мэдээлэл бүртгэгдэж, элсэлтийн албанд БҮРЭН тайлан очлоо.',
+                'Одоо яриаг дуусга: товлосон өдөр, цаг, хаяг (' + VISIT.place + '),',
+                formatMnt(TUITION.seatDeposit) + ' бэлнээр авчрахыг давтаж хэл.',
+                'Төгсгөлд нь ирээдүйнхээ төлөө шийдвэр гаргасанд нь ДУЛААХАН',
+                'баяр хүргэ — emoji хэрэглэ.',
+              ].join(' '),
+        };
+      }
+
       return {
-        content:
-          'Нэр, нас, утас, gmail бүртгэгдлээ. Уулзалтын цаг хараахан товлогдоогүй байна — ' +
-          '8-р алхам руу ор: "Сургалтын алба руу хэзээ ирэх вэ?" гэж асуугаад ' +
-          'book_school_visit дууд. Онлайн төлбөр, нэхэмжлэх БАЙХГҮЙ — бэлнээр биечлэн.',
+        content: online
+          ? 'Бүртгэлээ. Дутуу мэдээллийг НЭГ НЭГЭЭР нь асуу (нэр → утас → gmail).'
+          : 'Бүртгэлээ. Уулзалтын цаг хараахан товлогдоогүй бол өдрийг нь эелдэгээр асуу.',
       };
     }
+    // ─── Бүртгэлийн зам сонгох ─────────────────────────────────────────
+    if (name === 'set_registration_mode') {
+      const mode = REGISTRATION.modes[input.mode];
+      if (!mode) return { content: 'Тодорхойгүй зам: ' + input.mode, isError: true };
 
-    // ─── QPay нэхэмжлэх ────────────────────────────────────────────────
+      await saveLead(ctx.psid, { registrationMode: mode.id, stage: 'mode_selected' });
+
+      if (mode.id === 'online') {
+        return {
+          content: [
+            'Онлайн бүртгэлийн зам сонгогдлоо.',
+            'Хэрэглэгчид дараахыг ТОВЧ хэл:',
+            'суудал баталгаажуулах ' + formatMnt(TUITION.seatDeposit) + '-г дараах данс руу шилжүүлнэ —',
+            BANK_ACCOUNT.bankName + ', данс ' + BANK_ACCOUNT.accountNumber + ',',
+            'хүлээн авагч ' + BANK_ACCOUNT.accountName + '.',
+            'Гэрээг gmail хаягаар нь илгээнэ.',
+            'Дараа нь НЭГ асуулт: нэрийг нь асуу. Утас, gmail-ыг ТУС ТУСАД нь дараалуулж ав.',
+          ].join(' '),
+        };
+      }
+
+      return {
+        content: [
+          'Биеэр ирж бүртгүүлэх зам сонгогдлоо.',
+          'Хураамж ' + formatMnt(TUITION.seatDeposit) + '-г ирэхдээ БЭЛНЭЭР авчирна гэдгийг эндээс эхлэн хэлж болно.',
+          'Одоо цаг товлох алхам руу ор: эхлээд ӨДРИЙГ нь асуу ("Таны боломжтой өдөр хэзээ байна?"),',
+          'өдөр тодорхой болсны ДАРАА л цаг санал болго. Хоёуланг нь нэг дор бүү асуу.',
+        ].join(' '),
+      };
+    }
     // ─── Сургууль дээр ирэх цаг товлох ─────────────────────────────────
     if (name === 'book_school_visit') {
-      // Шинэ дарааллаар цаг товлох нь хувийн мэдээллээс ӨМНӨ явагдана.
-      // Тиймээс нэр, утас байхыг ШААРДАХГҮЙ — тэдгээрийг дараагийн алхамд авна.
+      // Цаг товлолт хувийн мэдээллээс ӨМНӨ явагдана — нэр, утас шаардахгүй.
       const lead = await getLead(ctx.psid);
 
-      await saveLead(ctx.psid, {
-        stage: 'visit_booked',
-        visit: { day: input.day, time: input.time, bookedAt: new Date().toISOString() },
-      });
+      // "Маргааш" гэдгийг тэр чигээр нь хадгалвал ажилтан ямар өдөр болохыг
+      // мэдэхгүй. Бодит огноо болгоно — танихгүй бол ТААМАГЛАХГҮЙ.
+      const resolved = resolveDay(input.day);
+
+      if (resolved && !WORKING_WEEKDAYS.includes(weekdayIndex(resolved.date))) {
+        return {
+          content: [
+            resolved.label + ' нь амралтын өдөр — сургалтын алба ажиллахгүй.',
+            'Хэрэглэгчид эелдэгээр хэлээд Даваа-Баасангийн аль өдөр таарахыг асуу.',
+          ].join(' '),
+          isError: true,
+        };
+      }
+
+      const visit = {
+        day: input.day,
+        time: input.time,
+        date: resolved?.date ?? null,
+        weekday: resolved?.weekday ?? null,
+        label: resolved ? resolved.label : input.day,
+        bookedAt: new Date().toISOString(),
+      };
+
+      await saveLead(ctx.psid, { stage: 'visit_booked', visit });
 
       if (!ctx.offline) {
         await notifyAdmins(
@@ -340,7 +440,8 @@ export async function executeTool(call, ctx) {
             'Утас: ' + (lead.phone ?? '-'),
             'Мэргэжил: ' + (lead.programName ?? '-'),
             'Урсгал: ' + (lead.trackName ?? '-'),
-            'ИРЭХ: ' + input.day + ' ' + input.time,
+            'ИРЭХ: ' + visit.label + ', ' + visit.time,
+            'Хэлсэн үг: "' + input.day + '"',
             'Хураамж: ' + formatMnt(TUITION.seatDeposit) + ' (бэлнээр)',
           ].filter(Boolean).join(String.fromCharCode(10)),
         );
@@ -350,12 +451,10 @@ export async function executeTool(call, ctx) {
 
       return {
         content: [
-          'Цаг товлогдлоо: ' + input.day + ' ' + input.time + '.',
-          'Хэрэглэгчид эхлээд НЭГ өгүүлбэрээр цаг баталгаажсаныг хэл.',
-          'Дараа нь ШУУД 9-р алхам руу ор — хувийн мэдээллийг ЗОРИЛГОТОЙГООР асуу:',
-          '"Сургуулийн хаяг, бүртгэлд юу бэлдэж ирэхийг тань руу илгээе.',
-          'Утсаар явуулах уу, эсвэл и-мэйлээр үү? Хоёуланг нь ч болно."',
-          'Хаягийг одоо БҮҮ бич — мэдээллийг нь авсны дараа 10-р алхамд хэлнэ.',
+          'Цаг товлогдлоо: ' + visit.label + ', ' + visit.time + '.',
+          'Хэрэглэгчид НЭГ дулаахан өгүүлбэрээр цаг баталгаажсаныг хэл.',
+          'Дараа нь ЗӨВХӨН НЭГ асуулт тавь: "Таныг хэн ирж уулзана гэж хэлэх вэ?"',
+          'Утас, хаягийг одоо БҮҮ асуу, БҮҮ бич — нэрийг нь авсны дараа ээлжлэн явна.',
         ].join(' '),
       };
     }

@@ -20,6 +20,7 @@ const key = (psid) => `lead:${psid}`;
 export const STAGES = {
   new: 'Шинэ',
   program_selected: 'Мэргэжил сонгосон',
+  mode_selected: 'Бүртгэлийн зам сонгосон',
   eesh_checked: 'ЭЕШ шалгасан', // хуучин бодлогын үлдэгдэл — шинэ яриа энд орохгүй
   contact_saved: 'Холбоо барих мэдээлэл өгсөн',
   visit_booked: 'Уулзалтын цаг товлосон',
@@ -34,6 +35,7 @@ const STAGE_ORDER = [
   'new',
   'program_selected',
   'eesh_checked',
+  'mode_selected',
   'visit_booked',
   'contact_saved',
   'invoice_created',
@@ -80,6 +82,7 @@ export async function getLead(psid) {
     incentiveLabel: null,
     annualAfterDiscount: null,
     invoice: null,
+    registrationMode: null,
     notes: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
