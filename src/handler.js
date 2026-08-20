@@ -258,6 +258,34 @@ async function handleAttachment(psid, attachments) {
 }
 
 /**
+ * Эхний мессеж нь ЗӨВХӨН мэндчилгээ мөн эсэх.
+ *
+ * Хүн шууд асуулт бичсэн байхад бэлэн мэндчилгээгээ дээр нь давхарлавал
+ * гурван мессежийн хана босч, хүн уйдаад гардаг. Тийм үед мэндчилгээг
+ * тусад нь илгээхгүй — бот өөрөө нэг мессежд танилцаад, асуултад нь
+ * хариулаад, цааш чиглүүлнэ.
+ *
+ * Эргэлзвэл АСУУЛТ гэж үзнэ — хүний асуултыг хариулахгүй орхих нь
+ * илүү том алдаа.
+ */
+const GREETING_ONLY = new Set([
+  'сайн байна уу', 'сайн байцгаана уу', 'сайн уу', 'сайнуу', 'сайн',
+  'байна уу', 'за', 'за за', 'ok', 'окей', 'тийм',
+  'sain bainuu', 'sain bnuu', 'sain bn uu', 'sainuu', 'sn bnu', 'sainbainauu',
+  'hi', 'hello', 'hey', 'start', 'эхлэх', 'эхэлье',
+]);
+
+export function isGreetingOnly(text) {
+  if (typeof text !== 'string') return false;
+  const clean = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (clean === '') return true;
+  return GREETING_ONLY.has(clean);
+}
+/**
  * Мэндчилгээ илгээнэ.
  *
  * Мэргэжлийн жагсаалтын картыг ЭНД илгээхгүй — түүнийг show_program_list
@@ -280,9 +308,21 @@ async function respondToTurn(psid, userText) {
     const session = await getSession(psid);
     const isFirstContact = !session.greeted && session.messages.length === 0;
 
-    if (isFirstContact) {
+    if (isFirstContact && isGreetingOnly(userText)) {
+      // Зөвхөн мэндэлсэн бол албан ёсны мэндчилгээ л хангалттай.
+      // Мэндчилгээ өөрөө "танилцах уу?" гэж асуусан тул AI-г дуудахгүй —
+      // хоёр мессеж дараалан очих нь хүнийг үргээдэг, мөн токен ч хэмнэнэ.
       session.greeted = true;
       await sendGreeting(psid);
+      await saveSession(psid, session);
+      await sendSenderAction(psid, 'typing_off');
+      return;
+    }
+
+    if (isFirstContact) {
+      // Хүн шууд асуулт бичсэн: бэлэн мэндчилгээг ДЭЭР НЬ давхарлахгүй.
+      // Бот нэг мессежд танилцаад, асуултад нь хариулна (FLOW 1-р алхам).
+      session.greeted = true;
     }
 
     const profile = isFirstContact ? await getUserProfile(psid) : null;
