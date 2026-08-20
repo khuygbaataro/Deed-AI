@@ -123,6 +123,19 @@ export async function handleEvent(event) {
   // Зөвхөн бичсэн хүнд өөрийнх нь дугаарыг харуулна — бусдын мэдээлэл
   // задрахгүй. FB_ADMIN_PSIDS тохируулахад хэрэгтэй.
   const cmd = userText.trim().toLowerCase();
+
+  // Туршилтын команд — яриаг эхнээс нь дахин эхлүүлнэ.
+  // Ботыг шинэ элсэгчийн нүдээр шалгахад хэрэгтэй.
+  if (cmd === 'дахин эхлэх' || cmd === '/reset' || cmd === 'reset') {
+    await resetSession(psid);
+    await kvDelete(bufKey(psid));
+    await saveSession(psid, { messages: [], handedOver: false, greeted: true });
+    await sendSenderAction(psid, 'mark_seen');
+    await sendGreeting(psid);
+    log.info('Яриа дахин эхэллээ', { psid: maskPsid(psid) });
+    return;
+  }
+
   if (cmd === 'psid' || cmd === '/psid') {
     await sendSenderAction(psid, 'mark_seen');
     await sendText(
