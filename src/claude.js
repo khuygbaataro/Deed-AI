@@ -4,6 +4,7 @@ import { log, maskPsid } from './logger.js';
 import { buildSystemPrompt } from './prompt.js';
 import { TOOLS, executeTool } from './tools.js';
 import { recordEvent } from './events.js';
+import { recordUsage } from './usage.js';
 
 let client = null;
 
@@ -61,7 +62,11 @@ export async function generateReply({ history, userText, psid, userName = null, 
         model: config.claude.model,
         max_tokens: config.claude.maxTokens,
         // Систем промпт тогтмол тул кэшлэнэ — давтагдсан хүсэлтүүд ~90% хямд болно
-        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        // ttl: '1h' — өгөгдмөл 5 минут нь сийрэг урсгалд байнга алдагддаг.
+        // Бичих нь 2x үнэтэй ч 12 дахин удаан хадгалагдана.
+        system: [
+          { type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } },
+        ],
         thinking: { type: 'adaptive' },
         output_config: { effort: config.claude.effort },
         tools: TOOLS,
@@ -80,6 +85,8 @@ export async function generateReply({ history, userText, psid, userName = null, 
       });
       return { text: FALLBACK_TEXT, handedOver, messages: history };
     }
+
+    await recordUsage(config.claude.model, response.usage);
 
     log.debug('Claude хариу', {
       psid: maskPsid(psid),

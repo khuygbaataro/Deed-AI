@@ -11,12 +11,14 @@ import { stats as storeStats } from '../src/sessions.js';
 import { kvPing } from '../src/store.js';
 import { countLeads, listLeads } from '../src/leads.js';
 import { eventCounts } from '../src/events.js';
+import { todayUsage } from '../src/usage.js';
 
 export async function GET() {
   const kb = await loadKnowledge();
   const ping = await kvPing();
 
   // Тоо баримт — хувийн мэдээлэл БИШ, зөвхөн тоо
+  const usage = await todayUsage().catch(() => null);
   let stats = null;
   try {
     const [total, leads, events] = await Promise.all([
@@ -42,6 +44,7 @@ export async function GET() {
     effort: config.claude.effort,
     store: { ...storeStats(), ping },
     data: stats,
+    usageToday: usage,
     knowledge: { files: kb.files, bytes: kb.bytes },
     // Дутуу тохиргоо — зөвхөн нэрс, утга харуулахгүй
     missingConfig: missingConfig(),
