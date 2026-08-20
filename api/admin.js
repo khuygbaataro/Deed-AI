@@ -8,6 +8,7 @@
 import { countLeads, listLeads, STAGES } from '../src/leads.js';
 import { IS_FIRST_YEAR_FREE, TUITION, formatMnt } from '../src/admissions.js';
 import { kvDriver } from '../src/store.js';
+import { EVENT_TYPES, listEvents } from '../src/events.js';
 
 const adminToken = () => {
   const v = process.env.ADMIN_TOKEN;
@@ -102,7 +103,48 @@ function toCsv(leads) {
   return [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\n');
 }
 
-function renderPage(leads, total, filter, registeredCount) {
+/**
+ * Анхаарах үйл явдлууд — бот юуг мэдэхгүй байна, хаана алдав.
+ * Мэдлэгийн санг юугаар баяжуулахыг эндээс шууд харна.
+ */
+function renderEvents(events) {
+  if (!events.length) {
+    return '<div class="events"><h2>Анхаарах зүйлс</h2>' +
+      '<div class="empty">Одоогоор алдаа, дутуу мэдээлэл бүртгэгдээгүй.</div></div>';
+  }
+
+  const counts = {};
+  for (const e of events) counts[e.type] = (counts[e.type] ?? 0) + 1;
+
+  const chips = Object.entries(counts)
+    .map(([k, n]) => `<span class="chip c-${esc(k)}">${esc(EVENT_TYPES[k] ?? k)}: ${n}</span>`)
+    .join('');
+
+  const rows = events
+    .map(
+      (e) => `<tr>
+        <td class="dim">${esc(new Date(e.ts).toLocaleString('mn-MN'))}</td>
+        <td><span class="chip c-${esc(e.type)}">${esc(EVENT_TYPES[e.type] ?? e.type)}</span></td>
+        <td>${esc(e.question ?? '')}</td>
+        <td class="dim">${esc(e.detail ?? '')}</td>
+      </tr>`,
+    )
+    .join('');
+
+  return `<div class="events">
+    <h2>Анхаарах зүйлс</h2>
+    <div class="chips">${chips}</div>
+    <div class="wrap">
+      <table><thead><tr>
+        <th>Огноо</th><th>Төрөл</th><th>Асуулт</th><th>Дэлгэрэнгүй</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </div>
+    <p class="hint">"Мэдээлэл дутуу" гэсэн мөрүүд нь ботын мэдэхгүй асуултууд —
+    эдгээрийг knowledge/ хавтсанд нэмбэл бот дараагаас хариулж чадна.</p>
+  </div>`;
+}
+
+function renderPage(leads, total, filter, registeredCount, events = []) {
   const stageCounts = {};
   for (const l of leads) stageCounts[l.stage] = (stageCounts[l.stage] ?? 0) + 1;
 
@@ -171,6 +213,14 @@ tr:last-child td{border-bottom:none}
 .tabs{display:flex;gap:.5rem;margin-bottom:1.25rem}
 .tab{font-size:.85rem;text-decoration:none;color:inherit;border:1px solid var(--b);padding:.35rem .8rem;border-radius:99px}
 .tab.on{background:#8882;font-weight:600}
+.events{margin-top:2.5rem}
+.events h2{font-size:1.05rem;margin:0 0 .6rem}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.75rem}
+.chip{font-size:.75rem;padding:.15rem .55rem;border-radius:99px;background:#8882;white-space:nowrap}
+.c-missing_info{background:#f59e0b33}.c-ai_error{background:#ef444433}
+.c-send_error{background:#ef444433}.c-tool_error{background:#ef444433}
+.c-rate_limited{background:#8b5cf633}
+.hint{font-size:.8rem;color:var(--muted);margin-top:.6rem}
 a.btn{display:inline-block;margin-top:1rem;font-size:.85rem;text-decoration:none;border:1px solid var(--b);padding:.4rem .8rem;border-radius:8px;color:inherit}
 </style></head><body>
 <h1>Элсэгчдийн бүртгэл</h1>
@@ -192,6 +242,7 @@ ${
     : `<div class="empty">${filter === 'registered' ? 'Нэр, утсаа өгсөн элсэгч хараахан алга.' : 'Одоогоор яриа алга. Messenger-ээр хэн нэгэн бичихэд энд харагдана.'}</div>`
 }
 </div>
+${renderEvents(events)}
 <a class="btn" href="/api/admin?format=csv${filter === 'registered' ? '&filter=registered' : ''}">⬇ CSV татах</a>
 </body></html>`;
 }
@@ -207,6 +258,7 @@ export async function GET(request) {
   const total = await countLeads();
   const filter = url.searchParams.get('filter');
   const leads = filter === 'registered' ? all.filter(isRegistered) : all;
+  const events = await listEvents(40);
 
   if (url.searchParams.get('format') === 'csv') {
     return new Response(`﻿${toCsv(leads)}`, {
@@ -218,7 +270,7 @@ export async function GET(request) {
     });
   }
 
-  return new Response(renderPage(leads, total, filter, all.filter(isRegistered).length), {
+  return new Response(renderPage(leads, total, filter, all.filter(isRegistered).length, events), {
     status: 200,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   });

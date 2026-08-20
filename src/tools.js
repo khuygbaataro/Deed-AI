@@ -19,6 +19,7 @@ import {
 
 import { createInvoice, isQpayConfigured } from './qpay.js';
 import { kvSet } from './store.js';
+import { recordEvent } from './events.js';
 
 const PROGRAM_NAMES = PROGRAMS.map((p) => p.name);
 
@@ -124,6 +125,27 @@ export const TOOLS = [
         },
       },
       required: ['confirmed'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'report_missing_info',
+    description:
+      'Хэрэглэгчийн асуултад мэдлэгийн сангаас хариулах мэдээлэл БАЙХГҮЙ үед дуудна. ' +
+      'Асуултыг бүртгэж, сургууль ямар мэдээлэл дутуу байгааг хожим харах боломжтой болгоно. ' +
+      'Дуудсаны дараа хэрэглэгчид шударгаар "баталгаатай мэдээлэл алга" гэж хэлээд ' +
+      'утсыг нь үлдээхийг санал болго. Мэдэхгүй асуулт бүрт дуудна — энэ нь ' +
+      'мэдлэгийн санг сайжруулах гол эх сурвалж.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        question: {
+          type: 'string',
+          description: 'Хэрэглэгчийн асуусан асуултыг товчоор (монголоор)',
+        },
+      },
+      required: ['question'],
       additionalProperties: false,
     },
   },
@@ -398,6 +420,19 @@ export async function executeTool(call, ctx) {
       };
     }
 
+    // ─── Мэдээлэл дутуу гэж бүртгэх ────────────────────────────────────
+    if (name === 'report_missing_info') {
+      await recordEvent('missing_info', { psid: ctx.psid, question: input.question });
+      log.info('Мэдээлэл дутуу', { psid: maskPsid(ctx.psid) });
+      return {
+        content:
+          'Бүртгэгдлээ. Одоо хэрэглэгчид шударгаар "энэ талаар надад баталгаатай ' +
+          'мэдээлэл алга" гэж хэлээд, элсэлтийн ажилтан тодорхой хариулж чадна ' +
+          'гэдгийг нэм. Нэр, утсаа үлдээвэл эргэж холбогдоно гэж санал болго. ' +
+          'Таамаг, ойролцоо хариулт ХЭЗЭЭ Ч бүү хэл.',
+      };
+    }
+
     // ─── Ажилтан руу шилжүүлэх ─────────────────────────────────────────
     if (name === 'escalate_to_human') {
       await saveLead(ctx.psid, { stage: 'escalated' });
@@ -425,6 +460,7 @@ export async function executeTool(call, ctx) {
     return { content: `Тодорхойгүй хэрэгсэл: ${name}`, isError: true };
   } catch (err) {
     log.error('Хэрэгсэл гүйцэтгэхэд алдаа гарлаа', { name, error: err.message });
+    await recordEvent('tool_error', { psid: ctx.psid, detail: `${name}: ${err.message}` });
     return {
       content:
         'Техникийн алдаа гарлаа. Хэрэглэгчээс уучлалт гуйж, сургуулийн утсаар холбогдохыг санал болго.',

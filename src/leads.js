@@ -23,6 +23,7 @@ export const STAGES = {
   eesh_checked: 'ЭЕШ шалгасан', // хуучин бодлогын үлдэгдэл — шинэ яриа энд орохгүй
   contact_saved: 'Холбоо барих мэдээлэл өгсөн',
   invoice_created: 'Нэхэмжлэх үүссэн',
+  receipt_sent: 'Баримт илгээсэн',
   paid: 'Төлбөр төлсөн',
   escalated: 'Ажилтан руу шилжсэн',
 };
@@ -34,11 +35,12 @@ const STAGE_ORDER = [
   'eesh_checked',
   'contact_saved',
   'invoice_created',
+  'receipt_sent',
   'paid',
 ];
 
 /** Шилжүүлсний дараа ч үргэлжилж болох шатууд — тайлан зөв гарахын тулд */
-const OVERRIDES_ESCALATED = ['invoice_created', 'paid'];
+const OVERRIDES_ESCALATED = ['invoice_created', 'receipt_sent', 'paid'];
 
 function mergeStage(current, next) {
   if (!next) return current;

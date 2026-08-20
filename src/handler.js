@@ -4,8 +4,11 @@ import { generateReply } from './claude.js';
 import { GREETING, PAYLOAD_PROMPTS } from './prompt.js';
 import { getUserProfile, sendSenderAction, sendText } from './messenger.js';
 import { getSession, resetSession, saveSession, setHandedOver } from './sessions.js';
+import { getLead, saveLead } from './leads.js';
+import { notifyAdmins } from './messenger.js';
 import { kvAppend, kvClaim, kvDelete, kvDrainList } from './store.js';
 import { checkRateLimit, rateLimitMessage } from './ratelimit.js';
+import { recordEvent } from './events.js';
 
 /** Дараалсан мессежийг хүлээж авах завсар (мс) */
 const COALESCE_MS = 2500;
@@ -107,9 +110,10 @@ export async function handleEvent(event) {
 
   // Текст биш контент (зураг, файл, наалт)
   if (!userText) {
-    if (event.message?.attachments?.length) {
+    const attachments = event.message?.attachments ?? [];
+    if (attachments.length) {
       await sendSenderAction(psid, 'mark_seen');
-      await sendText(psid, 'Одоогоор би зөвхөн бичсэн текстийг ойлгодог. Асуултаа бичээд илгээнэ үү.');
+      await handleAttachment(psid, attachments);
     }
     return;
   }
@@ -134,6 +138,7 @@ export async function handleEvent(event) {
   // ─── Спам хамгаалалт: хурдны хязгаар ───────────────────────────────
   const rate = await checkRateLimit(psid);
   if (!rate.allowed) {
+    if (rate.warn) await recordEvent('rate_limited', { psid, detail: rate.scope });
     if (rate.warn) {
       await sendSenderAction(psid, 'mark_seen');
       await sendText(psid, rateLimitMessage(rate.scope));
@@ -155,31 +160,87 @@ export async function handleEvent(event) {
   // Ингэснээр 10 мессеж = 10 биш, 1 Claude дуудлага болно.
   await kvAppend(bufKey(psid), userText);
 
-  if (!(await kvClaim(turnKey(psid), 45))) {
-    log.debug('Энэ хэрэглэгчийг өөр дуудлага боловсруулж байна', { psid: maskPsid(psid) });
+  // Түгжээг ээлж БҮРТ авч, суллана. Ингэснээр боловсруулж байх зуур ирсэн
+  // мессеж дараагийн ээлжид, эсвэл өөр дуудлагаар баригдана — өмнө нь
+  // сүүлийн drain-ийн дараа ирсэн мессеж хэнд ч очихгүй унтардаг байв.
+  let greeted = false;
+  for (let round = 0; round < MAX_ROUNDS; round += 1) {
+    if (!(await kvClaim(turnKey(psid), 45))) {
+      log.debug('Энэ хэрэглэгчийг өөр дуудлага боловсруулж байна', { psid: maskPsid(psid) });
+      return;
+    }
+
+    try {
+      if (!greeted) {
+        await sendSenderAction(psid, 'mark_seen');
+        await sleep(COALESCE_MS); // дараалсан мессежүүдийг хүлээж авна
+        greeted = true;
+      }
+
+      const parts = await kvDrainList(bufKey(psid));
+      if (!parts.length) return;
+
+      if (parts.length > 1) {
+        log.info('Дараалсан мессежийг нэгтгэлээ', { psid: maskPsid(psid), count: parts.length });
+      }
+
+      await respondToTurn(psid, parts.join(String.fromCharCode(10)));
+    } finally {
+      await kvDelete(turnKey(psid));
+    }
+  }
+
+  // Хязгаарт хүрсэн ч буферт үлдсэн бол мэдэгдэнэ — чимээгүй алдагдахаас сэргийлж
+  const leftover = await kvDrainList(bufKey(psid));
+  if (leftover.length) {
+    log.warn('Мессеж боловсруулагдалгүй үлдлээ', { psid: maskPsid(psid), count: leftover.length });
+    await recordEvent('dropped', { psid, question: leftover.join(' | ').slice(0, 200) });
+    await sendText(
+      psid,
+      'Уучлаарай, хэт олон мессеж хурдан ирсэн тул зарим нь алдагдлаа. ' +
+        'Асуултаа дахин бичээд илгээгээрэй.',
+    );
+  }
+}
+
+/**
+ * Зураг, файл ирэхэд юу хийх вэ.
+ *
+ * Нэхэмжлэх үүссэний дараа ирсэн зураг бол төлбөрийн баримт байх магадлал
+ * өндөр. Тэр тохиолдолд хүлээн авсныг баталгаажуулж, санхүү хянана гэдгийг
+ * хэлээд админд мэдэгдэнэ. AI дуудахгүй — тодорхой, тогтмол хариу өгнө.
+ */
+async function handleAttachment(psid, attachments) {
+  const hasImage = attachments.some((a) => a.type === 'image');
+  const lead = await getLead(psid);
+  const awaitingPayment = ['invoice_created', 'receipt_sent', 'contact_saved'].includes(lead.stage);
+
+  if (hasImage && awaitingPayment) {
+    await saveLead(psid, { stage: 'receipt_sent' });
+    await sendText(
+      psid,
+      'Баримтыг хүлээн авлаа ✅' + String.fromCharCode(10, 10) +
+        'Таны бүртгэлийг онлайнаар авлаа. Санхүүгийн алба төлбөрийг хянаад, ' +
+        'баталгаажмагц тантай утсаар холбогдоно.',
+    );
+    await notifyAdmins(
+      [
+        '🧾 ТӨЛБӨРИЙН БАРИМТ ИРЛЭЭ',
+        `Нэр: ${lead.name ?? '-'}`,
+        `Утас: ${lead.phone ?? '-'}`,
+        `Мэргэжил: ${lead.programName ?? '-'}`,
+        'Messenger чатнаас баримтыг шалгана уу.',
+      ].join(String.fromCharCode(10)),
+    );
+    log.info('Төлбөрийн баримт хүлээн авлаа', { psid: maskPsid(psid) });
     return;
   }
 
-  try {
-    await sendSenderAction(psid, 'mark_seen');
-    await sleep(COALESCE_MS); // дараалсан мессежүүдийг хүлээж авна
-
-    for (let round = 0; round < MAX_ROUNDS; round += 1) {
-      const parts = await kvDrainList(bufKey(psid));
-      if (!parts.length) break;
-
-      if (parts.length > 1) {
-        log.info('Дараалсан мессежийг нэгтгэлээ', {
-          psid: maskPsid(psid),
-          count: parts.length,
-        });
-      }
-
-      await respondToTurn(psid, parts.join('\n'));
-    }
-  } finally {
-    await kvDelete(turnKey(psid));
-  }
+  await sendText(
+    psid,
+    'Зургийг хүлээн авлаа. Асуулт байвал бичээд илгээгээрэй — би текстээр ' +
+      'хариулж тусална.',
+  );
 }
 
 /**
@@ -227,6 +288,7 @@ async function respondToTurn(psid, userText) {
     await sendText(psid, result.text);
   } catch (err) {
     log.error('Хариу үүсгэхэд алдаа', { psid: maskPsid(psid), error: err.message });
+    await recordEvent('send_error', { psid, question: userText, detail: err.message });
     await sendSenderAction(psid, 'typing_off');
     await sendText(
       psid,

@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { log, maskPsid } from './logger.js';
 import { buildSystemPrompt } from './prompt.js';
 import { TOOLS, executeTool } from './tools.js';
+import { recordEvent } from './events.js';
 
 let client = null;
 
@@ -71,6 +72,11 @@ export async function generateReply({ history, userText, psid, userName = null, 
         psid: maskPsid(psid),
         status: err?.status,
         error: err?.message,
+      });
+      await recordEvent('ai_error', {
+        psid,
+        question: userText,
+        detail: `${err?.status ?? ''} ${err?.message ?? ''}`.trim(),
       });
       return { text: FALLBACK_TEXT, handedOver, messages: history };
     }
