@@ -6,7 +6,7 @@
  *
  * 2026-2027 оны элсэлтийн бодлого:
  *   - ЭХНИЙ ЖИЛИЙН сургалтын төлбөр БҮХ хөтөлбөрт үнэгүй
- *   - 2 дахь жилээс хойшхи төлбөр сургуулиас БАТАЛГААЖААГҮЙ (laterYearsAnnual)
+ *   - Жирийн жилийн төлбөр 5.5 сая, 2 дахь жилээс ойролцоогоор 6 сая (батлагдаагүй)
  *   - ЭЕШ өгсөн эсэх шаардахгүй, оноо асуухгүй
  *   - Орон нутаг / Улаанбаатар ялгаагүй
  *   - Элсэгч зөвхөн суудал баталгаажуулах хураамж төлнө
@@ -23,12 +23,16 @@ export const TUITION = {
   /** Үнэгүй нь хэдэн жилд хамаарах вэ */
   freeYears: 1,
   /**
-   * 2 дахь жилээс хойшхи жилийн төлбөр.
-   * null = сургуулиас баталгаажаагүй. Бот энэ тохиолдолд дүн ХЭЛЭХГҮЙ,
-   * "баталгаатай мэдээлэл алга" гээд элсэлтийн ажилтан руу чиглүүлнэ.
-   * Дүн тодорхой болмогц энд бичнэ — өөр хаана ч засах шаардлагагүй.
+   * Энэ жилийн ЖИРИЙН сургалтын төлбөр (элсэгчид эхний жилдээ үүнээс
+   * чөлөөлөгдөнө). Хэрэглэгч "жилийн төлбөр хэд вэ?" гэж асуувал энэ дүн.
    */
-  laterYearsAnnual: null,
+  currentYearSticker: 5_500_000,
+  /**
+   * 2 дахь жилээс хойшхи ойролцоо төлбөр.
+   * ⚠️ ОЙРОЛЦОО тоо — эцсийн дүн батлагдаагүй. Бот үүнийг "орчим",
+   * "төлөвтэй" гэсэн үгтэй хамт хэлнэ, амлалт болгож хэлэхгүй.
+   */
+  laterYearsApprox: 6_000_000,
   /** Суудал баталгаажуулах хураамж — элсэгч бүр төлнө */
   seatDeposit: 250_000,
   currency: 'MNT',
@@ -109,16 +113,16 @@ export const isBankConfigured = () =>
 
 // ─── Хөтөлбөрийн танилцуулга зураг ──────────────────────────────────────
 export const PROGRAM_IMAGES = {
-  'software-2plus2': '/programs/software-2plus2.png',
-  software: '/programs/software.png',
-  tourism: '/programs/tourism.png',
-  economics: '/programs/economics.png',
-  translation: '/programs/translation.png',
-  'area-studies': '/programs/area-studies.png',
+  "software-2plus2": "/programs/software-2plus2-v2.png",
+  software: "/programs/software-v2.png",
+  tourism: "/programs/tourism-v2.png",
+  economics: "/programs/economics-v2.png",
+  translation: "/programs/translation-v2.png",
+  "area-studies": "/programs/area-studies-v2.png",
 };
 
 /** Бүх мэргэжлийг нэг дор харуулах карт (ярианы эхэнд илгээнэ) */
-export const OVERVIEW_IMAGE = '/programs/all-programs.png';
+export const OVERVIEW_IMAGE = "/programs/all-programs-v2.png";
 
 /** Хөтөлбөрийн зургийн бүтэн https хаяг */
 export function programImageUrl(programId) {
