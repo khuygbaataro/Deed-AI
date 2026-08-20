@@ -53,6 +53,9 @@ export const config = {
   openai: {
     apiKey: str(process.env.OPENAI_API_KEY),
     baseUrl: str(process.env.OPENAI_BASE_URL, 'https://api.openai.com/v1'),
+    // responses (өгөгдмөл) | chat — хэрэгсэлтэй ажиллах шинэ загварууд
+    // /v1/responses шаарддаг тул өгөгдмөлөөр түүнийг сонгоно.
+    apiStyle: (str(process.env.OPENAI_API_STYLE, 'responses') || 'responses').toLowerCase(),
   },
 
   // --- Claude ---
@@ -91,6 +94,16 @@ export const config = {
  * @param {{requireFacebook?: boolean}} opts
  * @returns {string[]} дутуу байгаа хувьсагчдын жагсаалт
  */
+/**
+ * Ярианы түүхийн бүтцийг тодорхойлогч түлхүүр.
+ * Энэ утга өөрчлөгдвөл хуучин түүх таарахгүй тул sessions.js түүнийг цэвэрлэнэ.
+ */
+export function historyKey() {
+  return config.provider === 'openai'
+    ? 'openai:' + (config.openai.apiStyle === 'chat' ? 'chat' : 'responses')
+    : 'anthropic';
+}
+
 export function missingConfig({ requireFacebook = true } = {}) {
   const missing = [];
   if (config.provider === 'openai') {

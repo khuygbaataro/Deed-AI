@@ -1,4 +1,4 @@
-import { config } from './config.js';
+import { config, historyKey } from './config.js';
 import { kvDelete, kvDriver, kvGet, kvSet, pruneMemory, storeStats } from './store.js';
 
 /**
@@ -13,7 +13,7 @@ const key = (psid) => `sess:${psid}`;
 const ttlSeconds = () => config.session.ttlMinutes * 60;
 
 function fresh() {
-  return { messages: [], handedOver: false, greeted: false, provider: config.provider };
+  return { messages: [], handedOver: false, greeted: false, provider: historyKey() };
 }
 
 /**
@@ -26,13 +26,13 @@ export async function getSession(psid) {
 
   // Нийлүүлэгч солигдвол хуучин түүхийн бүтэц таарахгүй — API 400 өгнө.
   // Түүхийг хаяна, харин мэндчилсэн эсэх, шилжүүлсэн эсэхийг хадгална.
-  const sameProvider = (stored.provider ?? 'anthropic') === config.provider;
+  const sameProvider = (stored.provider ?? 'anthropic') === historyKey();
 
   return {
     messages: sameProvider ? stored.messages : [],
     handedOver: Boolean(stored.handedOver),
     greeted: Boolean(stored.greeted),
-    provider: config.provider,
+    provider: historyKey(),
   };
 }
 
@@ -40,7 +40,7 @@ export async function getSession(psid) {
 export async function saveSession(psid, session) {
   const trimmed = {
     ...session,
-    provider: config.provider,
+    provider: historyKey(),
     messages: trimMessages(session.messages),
   };
   await kvSet(key(psid), trimmed, ttlSeconds());
@@ -62,8 +62,10 @@ export async function setHandedOver(psid, value) {
  * Ийм мессежээр түүх эхэлж болохгүй — өмнөх tool_use блокгүй бол API 400 өгнө.
  */
 function hasToolResult(message) {
-  // OpenAI хэлбэр: тусдаа 'tool' үүрэгтэй мессеж
+  // OpenAI chat хэлбэр: тусдаа 'tool' үүрэгтэй мессеж
   if (message?.role === 'tool') return true;
+  // OpenAI responses хэлбэр: хэрэгслийн үр дүнгийн item
+  if (message?.type === 'function_call_output') return true;
   // Anthropic хэлбэр: user мессежийн дотор tool_result блок
   return (
     Array.isArray(message?.content) &&

@@ -14,7 +14,14 @@ import { buildSystemPrompt } from '../src/prompt.js';
 import { TOOLS } from '../src/tools.js';
 import { estimateCost, hasPricing } from '../src/usage.js';
 import { isClaude5 } from '../src/providers/shared.js';
-import { callOpenAi, toOpenAiTools } from '../src/providers/openai.js';
+import {
+  apiStyle,
+  buildRequest,
+  mapUsage,
+  post,
+  responsesText,
+  userMessage,
+} from '../src/providers/openai.js';
 
 const TEST_QUESTION = 'Сайн байна уу, ямар мэргэжлүүд байдаг вэ?';
 
@@ -77,39 +84,53 @@ async function checkAnthropic(model, system) {
 }
 
 async function checkOpenAi(model, system) {
-  const data = await callOpenAi({
+  const style = apiStyle();
+  const { path, body } = buildRequest({
     model,
-    max_completion_tokens: 300,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: TEST_QUESTION },
-    ],
-    tools: toOpenAiTools(),
+    system,
+    messages: [userMessage(TEST_QUESTION)],
+    maxTokens: 300,
   });
+  const data = await post(path, body);
+  const raw = mapUsage(data?.usage, style);
 
-  const choice = data?.choices?.[0];
-  const message = choice?.message ?? {};
-  const cached = data?.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+  if (style === 'chat') {
+    const choice = data?.choices?.[0];
+    const message = choice?.message ?? {};
+    return {
+      stopReason: choice?.finish_reason ?? null,
+      toolCalls: (message.tool_calls ?? []).map((c) => c.function?.name),
+      reply: (message.content ?? '').trim(),
+      usage: toUsageView(raw),
+      raw,
+      features: { apiStyle: style, strictTools: false, adaptiveThinking: false },
+    };
+  }
 
+  const output = data?.output ?? [];
   return {
-    stopReason: choice?.finish_reason ?? null,
-    toolCalls: (message.tool_calls ?? []).map((c) => c.function?.name),
-    reply: (message.content ?? '').trim(),
-    usage: {
-      input: Math.max(0, (data?.usage?.prompt_tokens ?? 0) - cached),
-      output: data?.usage?.completion_tokens ?? 0,
-      cacheRead: cached,
-      cacheWrite: 0,
+    stopReason: data?.status ?? null,
+    toolCalls: output.filter((o) => o.type === 'function_call').map((o) => o.name),
+    reply: responsesText(data),
+    usage: toUsageView(raw),
+    raw,
+    features: {
+      apiStyle: style,
+      reasoning: body.reasoning?.effort ?? null,
+      outputItems: output.map((o) => o.type),
     },
-    raw: {
-      input_tokens: Math.max(0, (data?.usage?.prompt_tokens ?? 0) - cached),
-      output_tokens: data?.usage?.completion_tokens ?? 0,
-      cache_read_input_tokens: cached,
-    },
-    features: { strictTools: false, adaptiveThinking: false },
   };
 }
 
+/** Бүртгэлийн хэлбэрээс харагдацын хэлбэрт */
+function toUsageView(raw) {
+  return {
+    input: raw.input_tokens ?? 0,
+    output: raw.output_tokens ?? 0,
+    cacheRead: raw.cache_read_input_tokens ?? 0,
+    cacheWrite: raw.cache_creation_input_tokens ?? 0,
+  };
+}
 export async function GET(request) {
   const token = adminToken();
   if (!token) {

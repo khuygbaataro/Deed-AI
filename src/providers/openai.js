@@ -1,18 +1,24 @@
 /**
- * OpenAI нийлүүлэгч (Chat Completions API).
+ * OpenAI нийлүүлэгч.
  *
- * ⚠️ ЭНЭ МОДУЛИЙГ БОДИТ ТҮЛХҮҮРЭЭР ТУРШИЖ ҮЗЭЭГҮЙ. Загварын нэр, талбарын
- *    нэр зөрж болзошгүй тул эхний удаад /ai-check хуудсаар шалгана уу —
- *    алдаа гарвал яг ямар алдаа болохыг тэндээс харна.
+ * ХОЁР API-г дэмжинэ:
+ *   responses (өгөгдмөл) — /v1/responses. Шинэ загварууд хэрэгсэлтэй
+ *                          ажиллахдаа ЗААВАЛ үүнийг шаарддаг.
+ *   chat                 — /v1/chat/completions. Хуучин загвар болон
+ *                          OpenAI-тай нийцтэй бусад үйлчилгээнд.
  *
  * Тохиргоо (Vercel → Environment Variables):
  *   AI_PROVIDER=openai
  *   OPENAI_API_KEY=...          ← ЗӨВХӨН ӨӨРӨӨ оруулна, чат руу хэзээ ч бүү бич
  *   BOT_MODEL=<загварын нэр>
- *   OPENAI_BASE_URL=...         (заавал биш, өгөгдмөл https://api.openai.com/v1)
+ *   OPENAI_API_STYLE=responses  (заавал биш: responses | chat)
+ *   OPENAI_BASE_URL=...         (заавал биш)
  *
  * Промпт кэш: OpenAI 1024-өөс дээш токентой промптыг АВТОМАТААР кэшилдэг тул
  * Anthropic-ийн cache_control шиг гараар тэмдэглэх шаардлагагүй.
+ *
+ * store: false — элсэгчид ихэвчлэн 17-18 настай. Ярианы агуулгыг OpenAI-ийн
+ * сервер дээр хадгалуулах шаардлагагүй.
  */
 import { config } from '../config.js';
 import { log, maskPsid } from '../logger.js';
@@ -24,32 +30,46 @@ import { FALLBACK_TEXT } from './shared.js';
 
 export const name = 'openai';
 
-/** Anthropic хэлбэрийн хэрэгслийг OpenAI хэлбэрт хөрвүүлнэ */
-export function toOpenAiTools(tools = TOOLS) {
+/** reasoning.effort-д зөвшөөрөгдөх утгууд — бусдыг илгээвэл 400 болно */
+const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
+
+/** Anthropic хэлбэрийн хэрэгслийг /v1/responses хэлбэрт хөрвүүлнэ (тэгш бүтэц) */
+export function toResponsesTools(tools = TOOLS) {
   return tools.map((t) => ({
     type: 'function',
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.input_schema,
-    },
+    name: t.name,
+    description: t.description,
+    parameters: t.input_schema,
+    // strict нь бүх талбарыг required, additionalProperties: false байхыг
+    // шаарддаг. Бидний схем түүнд нийцээгүй тул тодорхой унтраана.
+    strict: false,
   }));
 }
+
+/** Anthropic хэлбэрийн хэрэгслийг /v1/chat/completions хэлбэрт хөрвүүлнэ */
+export function toChatTools(tools = TOOLS) {
+  return tools.map((t) => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.input_schema },
+  }));
+}
+
+/** Одоогийн тохиргооны API хэлбэр */
+export const apiStyle = () => (config.openai.apiStyle === 'chat' ? 'chat' : 'responses');
 
 /**
  * Нэг хүсэлт илгээнэ.
  *
  * Шинэ загварууд max_tokens-ийг хүлээж авахаа больж max_completion_tokens
- * шаарддаг. Аль нь болохыг таамаглахгүй — эхлээд шинэ нэрээр илгээж, тэр нь
- * буруу гэсэн алдаа ирвэл хуучин нэрээр дахин оролдоно.
+ * шаарддаг. Аль нь болохыг таамаглахгүй — татгалзвал нөгөөгөөр дахин оролдоно.
  */
-export async function callOpenAi(body, { retryLegacyTokens = true } = {}) {
+export async function post(path, body, { retryLegacyTokens = true } = {}) {
   const baseUrl = (config.openai.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const res = await fetch(baseUrl + path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.openai.apiKey}`,
+      Authorization: 'Bearer ' + config.openai.apiKey,
     },
     body: JSON.stringify(body),
   });
@@ -66,14 +86,13 @@ export async function callOpenAi(body, { retryLegacyTokens = true } = {}) {
 
   const message = data?.error?.message ?? text.slice(0, 400);
 
-  // max_completion_tokens дэмжигдэхгүй загвар бол хуучин талбараар дахин оролдоно
   if (
     retryLegacyTokens &&
     'max_completion_tokens' in body &&
     /max_completion_tokens|Unrecognized request argument/i.test(message)
   ) {
     const { max_completion_tokens: limit, ...rest } = body;
-    return callOpenAi({ ...rest, max_tokens: limit }, { retryLegacyTokens: false });
+    return post(path, { ...rest, max_tokens: limit }, { retryLegacyTokens: false });
   }
 
   const err = new Error(message);
@@ -81,92 +100,188 @@ export async function callOpenAi(body, { retryLegacyTokens = true } = {}) {
   throw err;
 }
 
-/** OpenAI-ийн usage-ийг бидний бүртгэлийн хэлбэрт хөрвүүлнэ */
-function mapUsage(usage = {}) {
-  const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
+/**
+ * Хүсэлтийн биеийг бэлдэнэ. /ai-check ч яг үүнийг ашиглана — шалгалт нь
+ * бодит дуудлагатай ижил бүтэцтэй байж гэмээнэ утгатай.
+ */
+export function buildRequest({ model, system, messages, maxTokens }) {
+  const effort = config.claude.effort;
+
+  if (apiStyle() === 'chat') {
+    return {
+      path: '/chat/completions',
+      body: {
+        model,
+        max_completion_tokens: maxTokens,
+        messages: [{ role: 'system', content: system }, ...messages],
+        tools: toChatTools(),
+      },
+    };
+  }
+
   return {
-    input_tokens: Math.max(0, (usage.prompt_tokens ?? 0) - cached),
-    output_tokens: usage.completion_tokens ?? 0,
+    path: '/responses',
+    body: {
+      model,
+      instructions: system,
+      input: messages,
+      tools: toResponsesTools(),
+      max_output_tokens: maxTokens,
+      ...(REASONING_EFFORTS.includes(effort) ? { reasoning: { effort } } : {}),
+      store: false,
+    },
+  };
+}
+
+/** Хэрэглэгчийн мессежийг идэвхтэй API-ийн хэлбэрт оруулна */
+export function userMessage(text) {
+  return apiStyle() === 'chat'
+    ? { role: 'user', content: text }
+    : { role: 'user', content: [{ type: 'input_text', text }] };
+}
+
+/** /v1/responses хариунаас текстийг гаргана */
+export function responsesText(data) {
+  const parts = [];
+  for (const item of data?.output ?? []) {
+    if (item.type !== 'message') continue;
+    for (const c of item.content ?? []) {
+      if (c.type === 'output_text' && c.text) parts.push(c.text);
+    }
+  }
+  return parts.join('\n').trim();
+}
+
+/** usage-ийг бидний бүртгэлийн хэлбэрт хөрвүүлнэ */
+export function mapUsage(usage = {}, style = apiStyle()) {
+  if (style === 'chat') {
+    const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
+    return {
+      input_tokens: Math.max(0, (usage.prompt_tokens ?? 0) - cached),
+      output_tokens: usage.completion_tokens ?? 0,
+      cache_read_input_tokens: cached,
+      cache_creation_input_tokens: 0,
+    };
+  }
+  const cached = usage.input_tokens_details?.cached_tokens ?? 0;
+  return {
+    input_tokens: Math.max(0, (usage.input_tokens ?? 0) - cached),
+    output_tokens: usage.output_tokens ?? 0,
     cache_read_input_tokens: cached,
     cache_creation_input_tokens: 0,
   };
 }
 
+/** Хэрэгслийг дуудна — аргументыг задлахад алдаа гарвал хоосон объект */
+async function runTool(toolName, rawArguments, ctx) {
+  let input = {};
+  try {
+    input = JSON.parse(rawArguments || '{}');
+  } catch {
+    input = {};
+  }
+  return executeTool({ name: toolName, input }, ctx);
+}
+
 export async function generateReply({ history, userText, psid, userName = null, offline = false }) {
   const system = await buildSystemPrompt();
-  const messages = [...history, { role: 'user', content: userText }];
+  const style = apiStyle();
   const model = config.claude.model;
+
+  // ⚠️ Хоёр API-ийн ярианы түүх ӨӨР бүтэцтэй. Тиймээс sessions.js нь
+  // хэлбэр солигдоход хуучин түүхийг цэвэрлэдэг.
+  const messages = [...history, userMessage(userText)];
 
   let handedOver = false;
 
   for (let loop = 0; loop <= config.claude.maxToolLoops; loop += 1) {
+    const { path, body } = buildRequest({
+      model,
+      system,
+      messages,
+      maxTokens: config.claude.maxTokens,
+    });
+
     let data;
     try {
-      data = await callOpenAi({
-        model,
-        max_completion_tokens: config.claude.maxTokens,
-        messages: [{ role: 'system', content: system }, ...messages],
-        tools: toOpenAiTools(),
-      });
+      data = await post(path, body);
     } catch (err) {
       log.error('OpenAI API алдаа', {
         psid: maskPsid(psid),
+        style,
         status: err?.status,
         error: err?.message,
       });
       await recordEvent('ai_error', {
         psid,
         question: userText,
-        detail: `${err?.status ?? ''} ${err?.message ?? ''}`.trim(),
+        detail: ((err?.status ?? '') + ' ' + (err?.message ?? '')).trim(),
       });
       return { text: FALLBACK_TEXT, handedOver, messages: history };
     }
 
-    await recordUsage(model, mapUsage(data?.usage));
+    await recordUsage(model, mapUsage(data?.usage, style));
 
-    const choice = data?.choices?.[0];
-    const message = choice?.message;
-    if (!message) {
+    // ── /v1/chat/completions ─────────────────────────────────────────
+    if (style === 'chat') {
+      const message = data?.choices?.[0]?.message;
+      if (!message) {
+        log.error('OpenAI хариу хоосон', { psid: maskPsid(psid) });
+        await recordEvent('ai_error', { psid, question: userText, detail: 'хоосон хариу' });
+        return { text: FALLBACK_TEXT, handedOver, messages: history };
+      }
+
+      messages.push(message);
+      const toolCalls = message.tool_calls ?? [];
+      if (toolCalls.length === 0) {
+        return { text: (message.content ?? '').trim() || FALLBACK_TEXT, handedOver, messages };
+      }
+
+      for (const call of toolCalls) {
+        const result = await runTool(call.function?.name, call.function?.arguments, {
+          psid,
+          userName,
+          offline,
+        });
+        if (result.handedOver) handedOver = true;
+        messages.push({ role: 'tool', tool_call_id: call.id, content: result.content });
+      }
+      continue;
+    }
+
+    // ── /v1/responses ────────────────────────────────────────────────
+    const output = data?.output ?? [];
+    log.debug('OpenAI хариу', {
+      psid: maskPsid(psid),
+      status: data?.status,
+      items: output.map((o) => o.type).join(','),
+      in: data?.usage?.input_tokens,
+      out: data?.usage?.output_tokens,
+      cached: data?.usage?.input_tokens_details?.cached_tokens,
+    });
+
+    if (output.length === 0) {
       log.error('OpenAI хариу хоосон', { psid: maskPsid(psid) });
       await recordEvent('ai_error', { psid, question: userText, detail: 'хоосон хариу' });
       return { text: FALLBACK_TEXT, handedOver, messages: history };
     }
 
-    log.debug('OpenAI хариу', {
-      psid: maskPsid(psid),
-      stop: choice.finish_reason,
-      in: data.usage?.prompt_tokens,
-      out: data.usage?.completion_tokens,
-      cached: data.usage?.prompt_tokens_details?.cached_tokens,
-    });
+    // Загварын гаралтыг ХЭВЭЭР нь түүхэд нэмнэ — reasoning item-үүдийг
+    // хасвал дараагийн ээлжид загвар өмнөх бодлоо алдана.
+    messages.push(...output);
 
-    messages.push(message);
-
-    const toolCalls = message.tool_calls ?? [];
-    if (toolCalls.length === 0) {
-      const text = (message.content ?? '').trim();
-      return { text: text || FALLBACK_TEXT, handedOver, messages };
+    const calls = output.filter((o) => o.type === 'function_call');
+    if (calls.length === 0) {
+      return { text: responsesText(data) || FALLBACK_TEXT, handedOver, messages };
     }
 
-    for (const call of toolCalls) {
-      let input = {};
-      try {
-        input = JSON.parse(call.function?.arguments || '{}');
-      } catch {
-        input = {};
-      }
-
-      const result = await executeTool({ name: call.function?.name, input }, {
-        psid,
-        userName,
-        offline,
-      });
+    for (const call of calls) {
+      const result = await runTool(call.name, call.arguments, { psid, userName, offline });
       if (result.handedOver) handedOver = true;
-
       messages.push({
-        role: 'tool',
-        tool_call_id: call.id,
-        content: result.content,
+        type: 'function_call_output',
+        call_id: call.call_id,
+        output: result.content,
       });
     }
   }
