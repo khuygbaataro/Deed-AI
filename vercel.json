@@ -11,8 +11,21 @@
   },
   "outputDirectory": "public",
   "rewrites": [
-    { "source": "/webhook", "destination": "/api/webhook" },
-    { "source": "/health", "destination": "/api/health" },
-    { "source": "/admin", "destination": "/api/admin" }
+    {
+      "source": "/webhook",
+      "destination": "/api/webhook"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/admin",
+      "destination": "/api/admin"
+    },
+    {
+      "source": "/fb-status",
+      "destination": "/api/fb-status"
+    }
   ]
 }
