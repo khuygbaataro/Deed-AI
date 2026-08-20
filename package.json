@@ -12,7 +12,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "chat": "node scripts/chat.js",
-    "setup:messenger": "node scripts/setup-messenger.js"
+    "setup:messenger": "node scripts/setup-messenger.js",
+    "leads": "node scripts/leads.js"
   },
   "keywords": [
     "messenger",
