@@ -59,7 +59,7 @@ ol{padding-left:1.2rem}li{margin:.5rem 0}
 }
 
 /** Зөвхөн холбоо барих мэдээлэлтэй болсон (бодитоор бүртгэгдсэн) элсэгчид */
-const REGISTERED_STAGES = ['contact_saved', 'invoice_created', 'paid'];
+const REGISTERED_STAGES = ['contact_saved', 'visit_booked', 'invoice_created', 'receipt_sent', 'paid'];
 const isRegistered = (lead) => REGISTERED_STAGES.includes(lead.stage);
 
 function unauthorized() {
@@ -92,12 +92,12 @@ function csvCell(value) {
 
 function toCsv(leads) {
   const header = [
-    'Огноо', 'Шат', 'Нэр', 'Нас', 'Утас', 'И-мэйл', 'Мэргэжил', 'Урсгал', 'Нэхэмжлэх', 'Төлсөн',
+    'Огноо', 'Шат', 'Нэр', 'Нас', 'Утас', 'И-мэйл', 'Мэргэжил', 'Урсгал', 'Уулзалт', 'Төлсөн',
   ];
   const rows = leads.map((l) => [
     l.updatedAt, STAGES[l.stage] ?? l.stage, l.name, l.age ?? '', l.phone,
     l.email ?? '', l.programName, l.trackName ?? '',
-    l.invoice?.senderInvoiceNo ?? '',
+    l.visit ? l.visit.day + ' ' + l.visit.time : '',
     l.invoice?.paidAt ? 'тийм' : '',
   ]);
   return [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\n');
@@ -177,6 +177,7 @@ function renderPage(leads, total, filter, registeredCount, events = []) {
         <td class="dim">${esc(l.email ?? '')}</td>
         <td>${esc(l.programName ?? '')}</td>
         <td class="dim">${esc(l.trackName ?? '')}</td>
+        <td><b>${esc(l.visit ? l.visit.day + ' ' + l.visit.time : '')}</b></td>
         <td>${paid}</td>
       </tr>`;
     })
@@ -237,7 +238,7 @@ ${
   leads.length
     ? `<table><thead><tr>
         <th>Огноо</th><th>Шат</th><th>Нэр</th><th>Нас</th><th>Утас</th>
-        <th>И-мэйл</th><th>Мэргэжил</th><th>Урсгал</th><th>Төлбөр</th>
+        <th>И-мэйл</th><th>Мэргэжил</th><th>Урсгал</th><th>Уулзалт</th><th>Төлбөр</th>
       </tr></thead><tbody>${rows}</tbody></table>`
     : `<div class="empty">${filter === 'registered' ? 'Нэр, утсаа өгсөн элсэгч хараахан алга.' : 'Одоогоор яриа алга. Messenger-ээр хэн нэгэн бичихэд энд харагдана.'}</div>`
 }

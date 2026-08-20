@@ -12,6 +12,7 @@ import {
   TUITION,
   findProgram,
   formatMnt,
+  VISIT,
   findTrack,
   isBankConfigured,
   overviewImageUrl,
@@ -126,6 +127,30 @@ export const TOOLS = [
         },
       },
       required: ['confirmed'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'book_school_visit',
+    description:
+      'Элсэгчийг сургууль дээр ирж бүртгүүлэх ЦАГИЙГ ТОВЛОНО. Энэ бол элсэлтийн ' +
+      'эцсийн алхам — онлайн төлбөр биш, биечлэн ирж бүртгүүлнэ. ' +
+      'Хэрэглэгч ирэх өдөр, цагаа хэлсний дараа дуудна. Өмнө нь нэр, утас ' +
+      'бүртгэгдсэн байх ёстой.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        day: {
+          type: 'string',
+          description: 'Ирэх өдөр — хэрэглэгчийн хэлснээр (жишээ: "Мягмар гараг", "8-р сарын 25")',
+        },
+        time: {
+          type: 'string',
+          description: 'Ирэх цаг (жишээ: "15:00", "өглөө 10 цаг")',
+        },
+      },
+      required: ['day', 'time'],
       additionalProperties: false,
     },
   },
@@ -418,6 +443,49 @@ export async function executeTool(call, ctx) {
           `Нэхэмжлэх амжилттай үүслээ. Дүн: ${formatMnt(TUITION.seatDeposit)}. ` +
           `Хэрэглэгчид доорх холбоосыг бүтнээр нь дамжуул:\n${links}\n` +
           `Төлбөр төлсний дараа элсэлтийн алба холбогдоно гэж хэл.`,
+      };
+    }
+
+    // ─── Сургууль дээр ирэх цаг товлох ─────────────────────────────────
+    if (name === 'book_school_visit') {
+      const lead = await getLead(ctx.psid);
+      if (!lead.name || !lead.phone) {
+        return {
+          content: 'Нэр, утас бүртгэгдээгүй байна. Эхлээд save_contact_info-оор бүртгэ.',
+          isError: true,
+        };
+      }
+
+      await saveLead(ctx.psid, {
+        stage: 'visit_booked',
+        visit: { day: input.day, time: input.time, bookedAt: new Date().toISOString() },
+      });
+
+      if (!ctx.offline) {
+        await notifyAdmins(
+          [
+            '📅 УУЛЗАЛТЫН ЦАГ ТОВЛОЛОО',
+            'Нэр: ' + (lead.name ?? '-'),
+            'Нас: ' + (lead.age ?? '-'),
+            'Утас: ' + (lead.phone ?? '-'),
+            'Мэргэжил: ' + (lead.programName ?? '-'),
+            'Урсгал: ' + (lead.trackName ?? '-'),
+            'ИРЭХ: ' + input.day + ' ' + input.time,
+            'Хураамж: ' + formatMnt(TUITION.seatDeposit) + ' (бэлнээр)',
+          ].join(String.fromCharCode(10)),
+        );
+      }
+
+      log.info('Уулзалтын цаг товлолоо', { psid: maskPsid(ctx.psid) });
+
+      return {
+        content: [
+          'Цаг товлогдлоо: ' + input.day + ' ' + input.time + '.',
+          'Хаяг: ' + VISIT.place + '.',
+          'Хэрэглэгчид дараахыг ТОВЧ хэл: цаг баталгаажсан, хаяг, ирэхдээ',
+          formatMnt(TUITION.seatDeposit) + ' бэлнээр авчрах, бичиг баримтаа авчрах.',
+          'Элсэлтийн албанд мэдэгдсэн гэдгийг нэм.',
+        ].join(' '),
       };
     }
 

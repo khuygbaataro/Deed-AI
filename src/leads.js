@@ -22,6 +22,7 @@ export const STAGES = {
   program_selected: 'Мэргэжил сонгосон',
   eesh_checked: 'ЭЕШ шалгасан', // хуучин бодлогын үлдэгдэл — шинэ яриа энд орохгүй
   contact_saved: 'Холбоо барих мэдээлэл өгсөн',
+  visit_booked: 'Уулзалтын цаг товлосон',
   invoice_created: 'Нэхэмжлэх үүссэн',
   receipt_sent: 'Баримт илгээсэн',
   paid: 'Төлбөр төлсөн',
@@ -34,6 +35,7 @@ const STAGE_ORDER = [
   'program_selected',
   'eesh_checked',
   'contact_saved',
+  'visit_booked',
   'invoice_created',
   'receipt_sent',
   'paid',
@@ -68,6 +70,7 @@ export async function getLead(psid) {
     programName: null,
     trackId: null,
     trackName: null,
+    visit: null,
     name: null,
     age: null,
     phone: null,
