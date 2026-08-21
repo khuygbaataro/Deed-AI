@@ -9,6 +9,7 @@ import { countLeads, listLeads, STAGES } from '../src/leads.js';
 import { IS_FIRST_YEAR_FREE, TUITION, formatMnt } from '../src/admissions.js';
 import { kvDriver } from '../src/store.js';
 import { EVENT_TYPES, listEvents } from '../src/events.js';
+import { format as formatDate, shift, today } from '../src/dates.js';
 
 const adminToken = () => {
   const v = process.env.ADMIN_TOKEN;
@@ -71,6 +72,150 @@ const visitText = (lead) => {
 };
 const isRegistered = (lead) => REGISTERED_STAGES.includes(lead.stage);
 
+/**
+ * Уулзалтын цагийг эрэмбэлэхэд ашиглах тоо.
+ * "14:00" → 840. Танихгүй бол хамгийн ард тавина.
+ */
+function timeRank(time) {
+  const m = String(time ?? '').match(/(\d{1,2})[:.](\d{2})/);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  const h = String(time ?? '').match(/(\d{1,2})/);
+  return h ? Number(h[1]) * 60 : 9999;
+}
+
+/**
+ * Уулзалт товлосон элсэгчдийг ӨДРӨӨР нь бүлэглэнэ.
+ *
+ * Сургалтын албаны ажилтан "өнөөдөр хэн ирэх вэ?" гэдгийг хамгийн түрүүнд
+ * харах ёстой. Тиймээс өнөөдөр, маргааш дээгүүр, өнгөрсөн нь доогуур.
+ */
+function groupVisits(leads) {
+  const now = today();
+  const tomorrow = shift(now, 1);
+  const groups = new Map();
+
+  for (const l of leads) {
+    if (!l.visit) continue;
+    const key = l.visit.date ?? 'unknown';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(l);
+  }
+
+  for (const list of groups.values()) {
+    list.sort((x, y) => timeRank(x.visit.time) - timeRank(y.visit.time));
+  }
+
+  const out = [];
+  for (const [date, list] of groups) {
+    if (date === 'unknown') {
+      out.push({ date, label: 'Огноо тодорхойгүй', kind: 'unknown', list });
+      continue;
+    }
+    let label = formatDate(date);
+    let kind = 'future';
+    if (date === now) { label = 'ӨНӨӨДӨР · ' + label; kind = 'today'; }
+    else if (date === tomorrow) { label = 'Маргааш · ' + label; kind = 'tomorrow'; }
+    else if (date < now) { label = label; kind = 'past'; }
+    out.push({ date, label, kind, list });
+  }
+
+  const order = { today: 0, tomorrow: 1, future: 2, unknown: 3, past: 4 };
+  out.sort((x, y) => {
+    if (order[x.kind] !== order[y.kind]) return order[x.kind] - order[y.kind];
+    if (x.kind === 'past') return y.date.localeCompare(x.date);
+    return x.date.localeCompare(y.date);
+  });
+  return out;
+}
+
+/** Өнөөдөр, маргааш, цаашид хэдэн хүн ирэхийг тоолно */
+function visitCounts(leads) {
+  const now = today();
+  const tomorrow = shift(now, 1);
+  const c = { today: 0, tomorrow: 0, later: 0 };
+  for (const l of leads) {
+    const d = l.visit?.date;
+    if (!d) continue;
+    if (d === now) c.today += 1;
+    else if (d === tomorrow) c.tomorrow += 1;
+    else if (d > now) c.later += 1;
+  }
+  return c;
+}
+
+/** Утасны дугаарыг дарахад залгадаг холбоос болгоно */
+function phoneLink(phone) {
+  if (!phone) return '<span class="dim">утас алга</span>';
+  const digits = String(phone).replace(/[^\d+]/g, '');
+  return '<a class="tel" href="tel:' + esc(digits) + '">' + esc(phone) + '</a>';
+}
+
+/** Нэг элсэгчийн мөр — хуваарийн жагсаалтад */
+function slotRow(l) {
+  const mode = MODE_LABELS[l.registrationMode] ?? '';
+  return [
+    '<li class="slot">',
+    '<span class="t">' + esc(l.visit?.time ?? '—') + '</span>',
+    '<span class="who">',
+    '<b>' + esc(l.name ?? '(нэр алга)') + '</b>',
+    '<span class="meta">' + phoneLink(l.phone) +
+      (l.programName ? ' · ' + esc(l.programName) : '') +
+      (l.age ? ' · ' + esc(l.age) + ' нас' : '') + '</span>',
+    '</span>',
+    '<span class="pay">' + formatMnt(TUITION.seatDeposit) + ' бэлнээр</span>',
+    mode ? '<span class="mode">' + esc(mode) + '</span>' : '',
+    '</li>',
+  ].join('');
+}
+
+/**
+ * Уулзалтын хуваарь — сургалтын албанд шууд өгөх харагдац.
+ * Хэвлэхэд зориулж print CSS бэлдсэн.
+ */
+function renderSchedule(leads, showHeading = true) {
+  const groups = groupVisits(leads);
+  const heading = showHeading ? '<h2>📅 Уулзалтын хуваарь</h2>' : '';
+  if (!groups.length) {
+    return '<div class="sched">' + heading +
+      '<div class="empty">Товлосон уулзалт хараахан алга.</div></div>';
+  }
+
+  const sections = groups
+    .map((g) => {
+      const body = '<ol class="slots">' + g.list.map(slotRow).join('') + '</ol>';
+      const head = '<h3>' + esc(g.label) + ' <span class="cnt">' + g.list.length + ' хүн</span></h3>';
+      if (g.kind === 'past') {
+        return '<details class="day past"><summary>' + esc(g.label) +
+          ' · ' + g.list.length + ' хүн (өнгөрсөн)</summary>' + body + '</details>';
+      }
+      return '<section class="day ' + g.kind + '">' + head + body + '</section>';
+    })
+    .join('');
+
+  return '<div class="sched">' + heading + sections + '</div>';
+}
+
+/**
+ * Онлайнаар бүртгүүлсэн — уулзалт байхгүй ч санхүү шалгах ёстой хүмүүс.
+ */
+function renderOnline(leads) {
+  const list = leads.filter((l) => l.registrationMode === 'online' && l.name && l.phone);
+  if (!list.length) return '';
+  const rows = list
+    .map((l) => [
+      '<li class="slot">',
+      '<span class="who">',
+      '<b>' + esc(l.name) + '</b>',
+      '<span class="meta">' + phoneLink(l.phone) +
+        (l.email ? ' · ' + esc(l.email) : '') +
+        (l.programName ? ' · ' + esc(l.programName) : '') + '</span>',
+      '</span>',
+      '<span class="pay">Гүйлгээний утга: <b>' + esc([l.name, l.phone].join(' ')) + '</b></span>',
+    ].join(''))
+    .join('');
+  return '<div class="sched"><h2>💻 Онлайн бүртгэл — шилжүүлэг шалгах</h2>' +
+    '<section class="day online"><ol class="slots">' + rows + '</ol></section></div>';
+}
 function unauthorized() {
   return new Response('Нэвтрэх шаардлагатай', {
     status: 401,
@@ -154,7 +299,14 @@ function renderEvents(events) {
   </div>`;
 }
 
-function renderPage(leads, total, filter, registeredCount, events = []) {
+function renderPage(leads, total, filter, registeredCount, events = [], visitCount = 0) {
+  const isVisits = filter === 'visits';
+  const isRegisteredView = filter === 'registered';
+  // Хуваарь нь бүртгэгдсэн болон хуваарийн харагдацад хоёуланд нь гарна —
+  // ажилтан "өнөөдөр хэн ирэх вэ?" гэдгийг хамгийн түрүүнд харах ёстой.
+  const schedule = isVisits || isRegisteredView ? renderSchedule(leads, !isVisits) : '';
+  const vc = visitCounts(leads);
+  const online = isVisits || isRegisteredView ? renderOnline(leads) : '';
   const stageCounts = {};
   for (const l of leads) stageCounts[l.stage] = (stageCounts[l.stage] ?? 0) + 1;
 
@@ -233,18 +385,54 @@ tr:last-child td{border-bottom:none}
 .c-send_error{background:#ef444433}.c-tool_error{background:#ef444433}
 .c-rate_limited{background:#8b5cf633}
 .hint{font-size:.8rem;color:var(--muted);margin-top:.6rem}
-a.btn{display:inline-block;margin-top:1rem;font-size:.85rem;text-decoration:none;border:1px solid var(--b);padding:.4rem .8rem;border-radius:8px;color:inherit}
+a.btn,button.btn{display:inline-block;margin:1rem .5rem 0 0;font-size:.85rem;text-decoration:none;border:1px solid var(--b);padding:.4rem .8rem;border-radius:8px;color:inherit;background:none;font-family:inherit;cursor:pointer}
+
+/* ── Уулзалтын хуваарь ── */
+.sched{margin:0 0 2rem}
+.sched h2{font-size:1.05rem;margin:0 0 .75rem}
+.day{border:1px solid var(--b);border-radius:12px;padding:.85rem 1rem;margin-bottom:.85rem}
+.day h3{font-size:.9rem;margin:0 0 .6rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.day .cnt{font-size:.75rem;font-weight:400;color:var(--muted);border:1px solid var(--b);border-radius:99px;padding:.05rem .5rem}
+.day.today{border-color:#22c55e88;background:#22c55e0f}
+.day.today h3{color:#16a34a}
+.day.tomorrow{border-color:#3b82f688;background:#3b82f60f}
+.day.unknown{border-color:#f59e0b88;background:#f59e0b0f}
+.day.online{border-color:#a855f788;background:#a855f70f}
+.day.past{opacity:.6;padding:.6rem 1rem}
+.day.past summary{cursor:pointer;font-size:.85rem;color:var(--muted)}
+.slots{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.4rem}
+.slot{display:flex;align-items:baseline;gap:.75rem;flex-wrap:wrap;padding:.45rem .6rem;border-radius:8px;background:#8881}
+.slot .t{font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums;min-width:3.5rem}
+.slot .who{display:flex;flex-direction:column;flex:1;min-width:12rem}
+.slot .who b{font-size:.95rem}
+.slot .meta{font-size:.8rem;color:var(--muted)}
+.slot .pay{font-size:.78rem;color:var(--muted);white-space:nowrap}
+.slot .mode{font-size:.7rem;padding:.1rem .45rem;border-radius:99px;background:#8883;white-space:nowrap}
+a.tel{color:inherit;font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)}
+
+@media print{
+  body{padding:0;font-size:11pt}
+  .tabs,.cards,.events,.warn,a.btn,button.btn,.wrap,.sub{display:none!important}
+  .day{break-inside:avoid;border-color:#999;background:none!important}
+  .day.past{display:none}
+  .slot{background:none;border-bottom:1px solid #ddd;border-radius:0}
+  a.tel{border:none}
+}
 </style></head><body>
-<h1>Элсэгчдийн бүртгэл</h1>
-<div class="sub">Нийт ${total} яриа · <b>${registeredCount} нь нэр, утсаа өгсөн</b> ·
-  ${IS_FIRST_YEAR_FREE ? "эхний жил үнэгүй" : "эхний жил " + formatMnt(TUITION.baseAnnual)} · хураамж ${formatMnt(TUITION.seatDeposit)}</div>
+<h1>${isVisits ? 'Уулзалтын хуваарь' : 'Элсэгчдийн бүртгэл'}</h1>
+<div class="sub">${isVisits
+  ? `Өнөөдөр <b>${vc.today} хүн</b> ирнэ · маргааш ${vc.tomorrow} · дараагийн өдрүүдэд ${vc.later} · хураамж ${formatMnt(TUITION.seatDeposit)} бэлнээр`
+  : `Нийт ${total} яриа · <b>${registeredCount} нь нэр, утсаа өгсөн</b> · ${IS_FIRST_YEAR_FREE ? "эхний жил үнэгүй" : "эхний жил " + formatMnt(TUITION.baseAnnual)} · хураамж ${formatMnt(TUITION.seatDeposit)}`}</div>
 <div class="tabs">
-  <a class="tab ${filter === 'registered' ? '' : 'on'}" href="/api/admin">Бүгд (${total})</a>
+  <a class="tab ${filter ? '' : 'on'}" href="/api/admin">Бүгд (${total})</a>
   <a class="tab ${filter === 'registered' ? 'on' : ''}" href="/api/admin?filter=registered">✅ Бүртгэгдсэн (${registeredCount})</a>
+  <a class="tab ${filter === 'visits' ? 'on' : ''}" href="/api/admin?filter=visits">📅 Хуваарь (${visitCount})</a>
 </div>
 ${warning}
-<div class="cards">${cards}</div>
-<div class="wrap">
+${schedule}
+${online}
+${isVisits ? '' : `<div class="cards">${cards}</div>`}
+${isVisits ? '' : `<div class="wrap">
 ${
   leads.length
     ? `<table><thead><tr>
@@ -253,9 +441,10 @@ ${
       </tr></thead><tbody>${rows}</tbody></table>`
     : `<div class="empty">${filter === 'registered' ? 'Нэр, утсаа өгсөн элсэгч хараахан алга.' : 'Одоогоор яриа алга. Messenger-ээр хэн нэгэн бичихэд энд харагдана.'}</div>`
 }
-</div>
+</div>`}
 ${renderEvents(events)}
-<a class="btn" href="/api/admin?format=csv${filter === 'registered' ? '&filter=registered' : ''}">⬇ CSV татах</a>
+<button class="btn" onclick="window.print()">🖨 Хуваарь хэвлэх</button>
+<a class="btn" href="/api/admin?format=csv${filter ? '&filter=' + filter : ''}">⬇ CSV татах</a>
 </body></html>`;
 }
 
@@ -269,7 +458,10 @@ export async function GET(request) {
   const all = await listLeads(limit);
   const total = await countLeads();
   const filter = url.searchParams.get('filter');
-  const leads = filter === 'registered' ? all.filter(isRegistered) : all;
+  const hasVisit = (l) => Boolean(l.visit);
+  let leads = all;
+  if (filter === 'registered') leads = all.filter(isRegistered);
+  else if (filter === 'visits') leads = all.filter((l) => hasVisit(l) || l.registrationMode === 'online');
   const events = await listEvents(150);
 
   if (url.searchParams.get('format') === 'csv') {
@@ -282,8 +474,18 @@ export async function GET(request) {
     });
   }
 
-  return new Response(renderPage(leads, total, filter, all.filter(isRegistered).length, events), {
-    status: 200,
-    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-  });
+  return new Response(
+    renderPage(
+      leads,
+      total,
+      filter,
+      all.filter(isRegistered).length,
+      events,
+      all.filter((l) => l.visit).length,
+    ),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    },
+  );
 }
