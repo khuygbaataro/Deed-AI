@@ -23,6 +23,13 @@ import { kvDriver } from '../src/store.js';
 import { EVENT_TYPES, listEvents } from '../src/events.js';
 import { format as formatDate, shift, today } from '../src/dates.js';
 import { barChart, columnChart, donutChart, funnelChart } from '../src/charts.js';
+import {
+  ANSWER_STATUSES,
+  listAnswers,
+  questionKey,
+  saveAnswer,
+  toMarkdown,
+} from '../src/event-notes.js';
 
 const adminToken = () => {
   const v = process.env.ADMIN_TOKEN;
@@ -484,19 +491,94 @@ function renderLeads(leads) {
 
 // ─── Алдааны хэсэг ─────────────────────────────────────────────────────
 
-function renderEvents(events) {
-  if (!events.length) {
-    return '<div class="empty">Одоогоор алдаа, дутуу мэдээлэл бүртгэгдээгүй. 👍</div>';
+/** Асуултын явцын өнгө */
+const ANSWER_COLORS = {
+  open: '#f59e0b',
+  answered: '#3b82f6',
+  added: '#22c55e',
+  ignored: '#94a3b8',
+};
+
+/**
+ * Мэдэхгүй асуултуудыг бүлэглэнэ.
+ *
+ * 122 мөрийг нэг бүрчлэн уншиж болохгүй — ижил асуултыг нэгтгэж, хэдэн
+ * хүн асуусныг тоолбол юуг эхэлж бөглөх нь шууд харагдана.
+ */
+function groupQuestions(events, answers) {
+  const missing = events.filter((e) => e.type === 'missing_info' && e.question);
+  const groups = new Map();
+
+  for (const e of missing) {
+    const key = questionKey(e.question);
+    if (!key) continue;
+    const g = groups.get(key) ?? { key, question: e.question, count: 0, last: e.ts };
+    g.count += 1;
+    if (e.ts > g.last) { g.last = e.ts; g.question = e.question; }
+    groups.set(key, g);
+  }
+
+  // Хариулт бичсэн ч үйл явдал нь устсан асуултууд ч харагдах ёстой
+  for (const [key, ans] of Object.entries(answers)) {
+    if (groups.has(key)) continue;
+    if (!ans.answer) continue;
+    groups.set(key, { key, question: ans.question ?? key, count: 0, last: ans.updatedAt });
+  }
+
+  const list = [...groups.values()].map((g) => ({
+    ...g,
+    answer: answers[g.key]?.answer ?? '',
+    status: ANSWER_STATUSES[answers[g.key]?.status] ? answers[g.key].status : 'open',
+  }));
+
+  // Хамгийн олон удаа асуусан нь дээр — тэр нь хамгийн их үр өгөөжтэй
+  list.sort((x, y) => y.count - x.count || String(y.last).localeCompare(String(x.last)));
+  return list;
+}
+
+/** Асуулт бүрийн карт — хариулт бичих талбартай */
+function questionCard(g) {
+  const options = Object.entries(ANSWER_STATUSES)
+    .map(
+      ([k, label]) =>
+        `<option value="${k}"${k === g.status ? ' selected' : ''}>${esc(label)}</option>`,
+    )
+    .join('');
+
+  return `<article class="qcard" data-status="${g.status}" data-search="${esc(g.question.toLowerCase())}">
+  <header>
+    <b>${esc(g.question)}</b>
+    <span class="tags">
+      ${g.count ? `<span class="cnt">${g.count} удаа</span>` : ''}
+      <span class="pill" style="--c:${ANSWER_COLORS[g.status]}">${esc(ANSWER_STATUSES[g.status])}</span>
+    </span>
+  </header>
+  <form class="answer-form" data-key="${esc(g.key)}" data-question="${esc(g.question)}">
+    <textarea name="answer" rows="2" placeholder="Зөв хариултыг нь энд бичнэ — сургуулиас баталгаажуулсан үгээр…">${esc(g.answer)}</textarea>
+    <div class="row">
+      <select name="status" aria-label="Явц">${options}</select>
+      <button type="submit">Хадгалах</button>
+      <span class="saved" hidden>✓ хадгаллаа</span>
+    </div>
+  </form>
+</article>`;
+}
+
+/** Техникийн алдаанууд — тусдаа, хариулт бичих зүйлгүй */
+function renderTechnical(events) {
+  const tech = events.filter((e) => e.type !== 'missing_info');
+  if (!tech.length) {
+    return '<div class="panel"><h2>Техникийн алдаа</h2>' +
+      '<div class="empty">Техникийн алдаа бүртгэгдээгүй. 👍</div></div>';
   }
 
   const counts = {};
-  for (const e of events) counts[e.type] = (counts[e.type] ?? 0) + 1;
-
+  for (const e of tech) counts[e.type] = (counts[e.type] ?? 0) + 1;
   const chips = Object.entries(counts)
     .map(([k, n]) => `<span class="chip c-${esc(k)}">${esc(EVENT_TYPES[k] ?? k)}: ${n}</span>`)
     .join('');
 
-  const rows = events
+  const rows = tech
     .map(
       (e) => `<tr>
         <td class="dim">${esc(new Date(e.ts).toLocaleString('mn-MN'))}</td>
@@ -507,17 +589,60 @@ function renderEvents(events) {
     )
     .join('');
 
-  return `
-<div class="chips">${chips}</div>
-<div class="wrap">
-  <table><thead><tr>
-    <th>Огноо</th><th>Төрөл</th><th>Асуулт</th><th>Дэлгэрэнгүй</th>
-  </tr></thead><tbody>${rows}</tbody></table>
-</div>
-<p class="hint">«Мэдээлэл дутуу» гэсэн мөрүүд нь ботын мэдэхгүй асуултууд —
-эдгээрийг <code>knowledge/</code> хавтсанд нэмбэл бот дараагаас хариулж чадна.</p>`;
+  return `<div class="panel">
+    <h2>Техникийн алдаа</h2>
+    <p class="hint">Эдгээр нь мэдлэгийн сангийн бус, кодын талын асуудал.</p>
+    <div class="chips">${chips}</div>
+    <div class="wrap"><table><thead><tr>
+      <th>Огноо</th><th>Төрөл</th><th>Асуулт</th><th>Дэлгэрэнгүй</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
 }
 
+/** Мэдлэгийн сангийн ажлын хуудас */
+function renderErrors(events, answers) {
+  const groups = groupQuestions(events, answers);
+
+  const byStatus = { open: 0, answered: 0, added: 0, ignored: 0 };
+  for (const g of groups) byStatus[g.status] += 1;
+  const ready = byStatus.answered;
+
+  const filters = Object.entries(ANSWER_STATUSES)
+    .map(
+      ([k, label]) =>
+        `<button class="fchip" data-filter="${k}" style="--c:${ANSWER_COLORS[k]}">` +
+        `${esc(label)} (${byStatus[k]})</button>`,
+    )
+    .join('');
+
+  const body = groups.length
+    ? groups.map(questionCard).join('')
+    : '<div class="empty">Ботын мэдэхгүй асуулт бүртгэгдээгүй. 👍</div>';
+
+  return `<div class="panel">
+  <h2>Ботын мэдэхгүй асуултууд</h2>
+  <p class="hint">Хамгийн олон асуусан нь дээр байна. Зөв хариултыг нь бичээд
+     хадгална → бүгдийг нь шалгасны дараа доорх товчоор Markdown болгон
+     татаж, <code>knowledge/</code> хавтсанд нэмнэ.</p>
+
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="Асуултаар хайх…" autocomplete="off">
+    <div class="fchips">
+      <button class="fchip on" data-filter="">Бүгд (${groups.length})</button>
+      ${filters}
+    </div>
+  </div>
+
+  <div class="qcards">${body}</div>
+  <div class="empty" id="noresult" hidden>Тохирох асуулт олдсонгүй.</div>
+
+  <p class="hint" style="margin-top:1rem">
+    ${ready ? `<b>${ready}</b> хариулт мэдлэгийн санд нэмэхэд бэлэн байна.` :
+      'Хариулт бичсэн зүйл хараахан алга.'}
+  </p>
+</div>
+${renderTechnical(events)}`;
+}
 // ─── Хуудас ────────────────────────────────────────────────────────────
 
 const STYLES = `
@@ -644,6 +769,21 @@ a.tel{color:inherit;font-weight:600;text-decoration:none;border-bottom:1px dotte
 .note-form button:hover{background:#8882}
 .saved{color:#16a34a;font-weight:700}
 
+/* Асуултын карт — мэдлэгийн сангийн ажил */
+.qcards{display:flex;flex-direction:column;gap:.6rem}
+.qcard{border:1px solid var(--b);border-radius:10px;padding:.7rem .9rem}
+.qcard[data-status="added"]{border-color:#22c55e55;background:#22c55e08}
+.qcard[data-status="ignored"]{opacity:.55}
+.qcard header{display:flex;justify-content:space-between;gap:.7rem;align-items:flex-start;flex-wrap:wrap}
+.qcard header b{font-size:.92rem;font-weight:600;flex:1;min-width:12rem}
+.qcard .cnt{font-size:.72rem;color:var(--muted);border:1px solid var(--b);border-radius:99px;padding:.05rem .5rem;white-space:nowrap}
+.answer-form{margin-top:.55rem;display:flex;flex-direction:column;gap:.45rem}
+.answer-form textarea{font:inherit;font-size:.85rem;line-height:1.45;padding:.5rem .65rem;border:1px solid var(--b);border-radius:8px;background:none;color:inherit;resize:vertical;width:100%}
+.answer-form .row{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+.answer-form select{font:inherit;font-size:.82rem;padding:.3rem .5rem;border:1px solid var(--b);border-radius:7px;background:none;color:inherit}
+.answer-form button{font:inherit;font-size:.82rem;padding:.3rem .8rem;border:1px solid var(--b);border-radius:7px;background:none;color:inherit;cursor:pointer}
+.answer-form button:hover{background:#8882}
+
 .wrap{overflow-x:auto;border:1px solid var(--b);border-radius:10px}
 table{border-collapse:collapse;width:100%;font-size:.85rem;min-width:42rem}
 th,td{padding:.5rem .7rem;text-align:left;border-bottom:1px solid var(--b);vertical-align:top}
@@ -729,6 +869,49 @@ document.addEventListener('submit', async (e) => {
   }
 });
 
+// Мэдлэгийн сангийн хариулт хадгалах
+document.addEventListener('submit', async (e) => {
+  const form = e.target.closest('.answer-form');
+  if (!form) return;
+  e.preventDefault();
+
+  const btn = form.querySelector('button');
+  const mark = form.querySelector('.saved');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(location.origin + location.pathname, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'answer',
+        key: form.dataset.key,
+        question: form.dataset.question,
+        answer: form.answer.value,
+        status: form.status.value,
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+
+    mark.hidden = false;
+    setTimeout(() => { mark.hidden = true; }, 1600);
+
+    const card = form.closest('.qcard');
+    card.dataset.status = data.status;
+    form.status.value = data.status;
+    const pill = card.querySelector('.pill');
+    if (pill) {
+      pill.textContent = data.statusLabel;
+      pill.style.setProperty('--c', data.statusColor);
+    }
+  } catch (err) {
+    alert('Хадгалж чадсангүй: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // Хайлт, шүүлтүүр
 const q = document.getElementById('q');
 let activeFilter = '';
@@ -736,7 +919,7 @@ let activeFilter = '';
 function applyFilter() {
   const term = (q?.value ?? '').trim().toLowerCase();
   let shown = 0;
-  for (const card of document.querySelectorAll('.lead')) {
+  for (const card of document.querySelectorAll('.lead, .qcard')) {
     const okStatus = !activeFilter || card.dataset.status === activeFilter;
     const okTerm = !term || (card.dataset.search ?? '').includes(term);
     const show = okStatus && okTerm;
@@ -757,7 +940,7 @@ for (const chip of document.querySelectorAll('.fchip')) {
   });
 }`;
 
-function renderPage({ view, leads, all, total, events }) {
+function renderPage({ view, leads, all, total, events, answers = {} }) {
   const registered = all.filter(isRegistered).length;
   const visitTotal = all.filter((l) => l.visit).length;
   const vc = visitCounts(all);
@@ -795,8 +978,8 @@ function renderPage({ view, leads, all, total, events }) {
     body = renderSchedule(leads.filter((l) => l.visit), false) + renderOnline(leads);
   } else if (view === 'errors') {
     title = 'Ботын алдаа, дутуу мэдээлэл';
-    sub = 'Бот юуг мэдэхгүй байна, хаана алдав — мэдлэгийн санг эндээс баяжуулна';
-    body = `<div class="panel">${renderEvents(events)}</div>`;
+    sub = 'Ботын мэдэхгүй асуултад хариулт бичээд, бүгдийг нэг дор мэдлэгийн санд нэмнэ';
+    body = renderErrors(events, answers);
   } else {
     title = 'Элсэлтийн хяналт';
     sub = `${IS_FIRST_YEAR_FREE ? 'Эхний жил үнэгүй' : 'Эхний жил ' + formatMnt(TUITION.baseAnnual)} · суудлын хураамж ${formatMnt(TUITION.seatDeposit)}`;
@@ -809,6 +992,10 @@ function renderPage({ view, leads, all, total, events }) {
       : '';
   const printBtn =
     view === 'visits' ? '<button class="btn" onclick="window.print()">🖨 Хуваарь хэвлэх</button>' : '';
+  const mdLink =
+    view === 'errors'
+      ? '<a class="btn" href="/api/admin?view=errors&format=md">⬇ Хариултуудыг .md болгон татах</a>'
+      : '';
 
   return `<!doctype html>
 <html lang="mn"><head><meta charset="utf-8">
@@ -821,7 +1008,7 @@ function renderPage({ view, leads, all, total, events }) {
 <div class="tabs">${tabs}</div>
 ${warning}
 ${body}
-${printBtn}${csvLink}
+${printBtn}${csvLink}${mdLink}
 <script>${SCRIPT}</script>
 </body></html>`;
 }
@@ -837,7 +1024,8 @@ export async function GET(request) {
   const limit = Math.min(1000, Number(url.searchParams.get('limit')) || 300);
   const all = await listLeads(limit);
   const total = await countLeads();
-  const events = await listEvents(150);
+  const events = await listEvents(300);
+  const answers = await listAnswers();
 
   const view = ['dashboard', 'leads', 'visits', 'errors'].includes(url.searchParams.get('view'))
     ? url.searchParams.get('view')
@@ -846,6 +1034,23 @@ export async function GET(request) {
   let leads = all;
   if (view === 'leads') leads = all.filter(isRegistered);
   else if (view === 'visits') leads = all.filter((l) => l.visit || l.registrationMode === 'online');
+
+  if (url.searchParams.get('format') === 'md') {
+    // Асуулт бүр хэдэн удаа ирснийг тоолж, олон асуусныг нь дээр гаргана
+    const counts = {};
+    for (const e of events) {
+      if (e.type !== 'missing_info' || !e.question) continue;
+      const k = questionKey(e.question);
+      counts[k] = (counts[k] ?? 0) + 1;
+    }
+    return new Response(toMarkdown(answers, counts), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'Content-Disposition': `attachment; filename="shine-hariultuud-${today()}.md"`,
+      },
+    });
+  }
 
   if (url.searchParams.get('format') === 'csv') {
     return new Response(`﻿${toCsv(leads)}`, {
@@ -857,7 +1062,7 @@ export async function GET(request) {
     });
   }
 
-  return new Response(renderPage({ view, leads, all, total, events }), {
+  return new Response(renderPage({ view, leads, all, total, events, answers }), {
     status: 200,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   });
@@ -874,6 +1079,26 @@ export async function POST(request) {
     body = await request.json();
   } catch {
     return new Response('Буруу хүсэлт', { status: 400 });
+  }
+
+  // Мэдлэгийн сангийн хариулт
+  if (body?.kind === 'answer') {
+    const key = typeof body.key === 'string' ? body.key.trim() : '';
+    if (!key) return new Response('key дутуу байна', { status: 400 });
+
+    const saved = await saveAnswer(key, {
+      question: typeof body.question === 'string' ? body.question : undefined,
+      answer: typeof body.answer === 'string' ? body.answer : undefined,
+      status: body.status,
+    });
+    if (!saved) return new Response('Хадгалж чадсангүй', { status: 500 });
+
+    return Response.json({
+      ok: true,
+      status: saved.status,
+      statusLabel: ANSWER_STATUSES[saved.status],
+      statusColor: ANSWER_COLORS[saved.status],
+    });
   }
 
   const psid = typeof body?.psid === 'string' ? body.psid.trim() : '';
