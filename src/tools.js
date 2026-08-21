@@ -358,9 +358,11 @@ export async function executeTool(call, ctx) {
             ? [
                 'Бүх мэдээлэл бүртгэгдэж, элсэлтийн албанд БҮРЭН тайлан очлоо.',
                 'Одоо яриаг дуусга: гэрээг gmail хаягаар нь илгээхийг хэл,',
-                BANK_ACCOUNT.bankName + ' данс ' + BANK_ACCOUNT.accountNumber +
+                BANK_ACCOUNT.bankName + ', данс ' + BANK_ACCOUNT.accountNumber +
+                  ', IBAN ' + BANK_ACCOUNT.iban +
                   ' (' + BANK_ACCOUNT.accountName + ') руу ' +
                   formatMnt(TUITION.seatDeposit) + ' шилжүүлэхийг сануул.',
+                'Данс, IBAN хоёуланг нь давт.',
                 'Төгсгөлд нь ирээдүйнхээ төлөө шийдвэр гаргасанд нь ДУЛААХАН',
                 'баяр хүргэ — emoji хэрэглэ.',
               ].join(' ')
@@ -394,7 +396,9 @@ export async function executeTool(call, ctx) {
             'Хэрэглэгчид дараахыг ТОВЧ хэл:',
             'суудал баталгаажуулах ' + formatMnt(TUITION.seatDeposit) + '-г дараах данс руу шилжүүлнэ —',
             BANK_ACCOUNT.bankName + ', данс ' + BANK_ACCOUNT.accountNumber + ',',
+            'IBAN ' + BANK_ACCOUNT.iban + ',',
             'хүлээн авагч ' + BANK_ACCOUNT.accountName + '.',
+            'Дансны дугаар, IBAN ХОЁУЛАНГ нь бич — зарим банкнаас IBAN-аар шилжүүлнэ.',
             'Гэрээг gmail хаягаар нь илгээнэ.',
             'Дараа нь НЭГ асуулт: нэрийг нь асуу. Утас, gmail-ыг ТУС ТУСАД нь дараалуулж ав.',
           ].join(' '),
