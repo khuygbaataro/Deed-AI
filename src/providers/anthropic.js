@@ -12,7 +12,7 @@ import { TOOLS, executeTool } from '../tools.js';
 import { recordEvent } from '../events.js';
 import { recordUsage } from '../usage.js';
 import { sendText } from '../messenger.js';
-import { FALLBACK_TEXT, REFUSAL_TEXT, isClaude5 } from './shared.js';
+import { DUPLICATE_TOOL, FALLBACK_TEXT, REFUSAL_TEXT, isClaude5 } from './shared.js';
 
 export const name = 'anthropic';
 
@@ -54,6 +54,12 @@ export async function generateReply({ history, userText, psid, userName = null, 
   // асуултын хариу ихэвчлэн тэнд байдаг.
   const interim = [];
 
+  // Нэг ээлжид гүйцэтгэсэн хэрэгслүүд — давхардлыг таслана
+  const called = new Set();
+
+  // Загвар хэрэгслээ дуудахаа больдоггүй бол хэрэгслийг УНТРААНА
+  let forceText = false;
+
   for (let loop = 0; loop <= config.claude.maxToolLoops; loop += 1) {
     let response;
     try {
@@ -68,7 +74,9 @@ export async function generateReply({ history, userText, psid, userName = null, 
         ...(isClaude5(model)
           ? { thinking: { type: 'adaptive' }, output_config: { effort: config.claude.effort } }
           : {}),
-        tools: toolsFor(model),
+        ...(forceText || loop === config.claude.maxToolLoops
+          ? {}
+          : { tools: toolsFor(model) }),
         messages,
       });
     } catch (err) {
@@ -118,8 +126,18 @@ export async function generateReply({ history, userText, psid, userName = null, 
 
     const toolUses = response.content.filter((block) => block.type === 'tool_use');
     const results = [];
+    let executed = 0;
 
     for (const call of toolUses) {
+      const sig = call.name + ':' + JSON.stringify(call.input ?? {});
+      if (called.has(sig)) {
+        log.warn('Давхардсан хэрэгслийн дуудлага', { psid: maskPsid(psid), tool: call.name });
+        results.push({ type: 'tool_result', tool_use_id: call.id, content: DUPLICATE_TOOL });
+        continue;
+      }
+      called.add(sig);
+      executed += 1;
+
       const result = await executeTool({ name: call.name, input: call.input }, {
         psid,
         userName,
@@ -135,8 +153,18 @@ export async function generateReply({ history, userText, psid, userName = null, 
     }
 
     messages.push({ role: 'user', content: results });
+
+    // Бүх дуудлага давхардсан бол загвар гацсан байна — хэрэгслийг унтраая
+    if (executed === 0) forceText = true;
   }
 
   log.warn('Хэрэгслийн давталтын хязгаарт хүрлээ', { psid: maskPsid(psid) });
+  await recordEvent('tool_error', {
+    psid,
+    question: userText,
+    detail:
+      'Хэрэгслийн давталтын хязгаарт хүрлээ (' + config.claude.maxToolLoops + '). ' +
+      'Дуудсан хэрэгслүүд: ' + [...called].map((s) => s.split(':')[0]).join(', '),
+  });
   return { text: interim.length ? '' : FALLBACK_TEXT, handedOver, interim, messages: history };
 }

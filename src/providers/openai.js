@@ -27,7 +27,7 @@ import { TOOLS, executeTool } from '../tools.js';
 import { recordEvent } from '../events.js';
 import { recordUsage } from '../usage.js';
 import { sendText } from '../messenger.js';
-import { FALLBACK_TEXT } from './shared.js';
+import { DUPLICATE_TOOL, FALLBACK_TEXT } from './shared.js';
 
 export const name = 'openai';
 
@@ -105,7 +105,7 @@ export async function post(path, body, { retryLegacyTokens = true } = {}) {
  * Хүсэлтийн биеийг бэлдэнэ. /ai-check ч яг үүнийг ашиглана — шалгалт нь
  * бодит дуудлагатай ижил бүтэцтэй байж гэмээнэ утгатай.
  */
-export function buildRequest({ model, system, messages, maxTokens }) {
+export function buildRequest({ model, system, messages, maxTokens, withTools = true }) {
   const effort = config.claude.effort;
 
   if (apiStyle() === 'chat') {
@@ -115,7 +115,7 @@ export function buildRequest({ model, system, messages, maxTokens }) {
         model,
         max_completion_tokens: maxTokens,
         messages: [{ role: 'system', content: system }, ...messages],
-        tools: toChatTools(),
+        ...(withTools ? { tools: toChatTools() } : {}),
       },
     };
   }
@@ -126,7 +126,7 @@ export function buildRequest({ model, system, messages, maxTokens }) {
       model,
       instructions: system,
       input: messages,
-      tools: toResponsesTools(),
+      ...(withTools ? { tools: toResponsesTools() } : {}),
       max_output_tokens: maxTokens,
       ...(REASONING_EFFORTS.includes(effort) ? { reasoning: { effort } } : {}),
       store: false,
@@ -201,12 +201,22 @@ export async function generateReply({ history, userText, psid, userName = null, 
   // карт үлддэг байв. Одоо тэр текстийг ШУУД илгээнэ.
   const interim = [];
 
+  // Нэг ээлжид гүйцэтгэсэн хэрэгслүүд — давхардлыг таслана
+  const called = new Set();
+
+  // Загвар хэрэгслээ дуудахаа больдоггүй бол хэрэгслийг УНТРААНА.
+  // Ингэснээр эцсийн ээлжид заавал текст буцаана — "техникийн саатал"
+  // гэсэн нөөц мессеж хэрэглэгчид хүрэхээс сэргийлнэ.
+  let forceText = false;
+
   for (let loop = 0; loop <= config.claude.maxToolLoops; loop += 1) {
+    const isLastRound = loop === config.claude.maxToolLoops;
     const { path, body } = buildRequest({
       model,
       system,
       messages,
       maxTokens: config.claude.maxTokens,
+      withTools: !forceText && !isLastRound,
     });
 
     let data;
@@ -252,7 +262,20 @@ export async function generateReply({ history, userText, psid, userName = null, 
         if (!offline) await sendText(psid, chatText);
       }
 
+      let executed = 0;
       for (const call of toolCalls) {
+        const sig = (call.function?.name ?? '') + ':' + (call.function?.arguments ?? '');
+        if (called.has(sig)) {
+          log.warn('Давхардсан хэрэгслийн дуудлага', {
+            psid: maskPsid(psid),
+            tool: call.function?.name,
+          });
+          messages.push({ role: 'tool', tool_call_id: call.id, content: DUPLICATE_TOOL });
+          continue;
+        }
+        called.add(sig);
+        executed += 1;
+
         const result = await runTool(call.function?.name, call.function?.arguments, {
           psid,
           userName,
@@ -261,6 +284,9 @@ export async function generateReply({ history, userText, psid, userName = null, 
         if (result.handedOver) handedOver = true;
         messages.push({ role: 'tool', tool_call_id: call.id, content: result.content });
       }
+
+      // Бүх дуудлага давхардсан бол загвар гацсан байна — хэрэгслийг унтраая
+      if (executed === 0) forceText = true;
       continue;
     }
 
@@ -299,7 +325,21 @@ export async function generateReply({ history, userText, psid, userName = null, 
       if (!offline) await sendText(psid, said);
     }
 
+    let executed = 0;
     for (const call of calls) {
+      const sig = (call.name ?? '') + ':' + (call.arguments ?? '');
+      if (called.has(sig)) {
+        log.warn('Давхардсан хэрэгслийн дуудлага', { psid: maskPsid(psid), tool: call.name });
+        messages.push({
+          type: 'function_call_output',
+          call_id: call.call_id,
+          output: DUPLICATE_TOOL,
+        });
+        continue;
+      }
+      called.add(sig);
+      executed += 1;
+
       const result = await runTool(call.name, call.arguments, { psid, userName, offline });
       if (result.handedOver) handedOver = true;
       messages.push({
@@ -308,8 +348,18 @@ export async function generateReply({ history, userText, psid, userName = null, 
         output: result.content,
       });
     }
+
+    // Бүх дуудлага давхардсан бол загвар гацсан байна — хэрэгслийг унтраая
+    if (executed === 0) forceText = true;
   }
 
   log.warn('Хэрэгслийн давталтын хязгаарт хүрлээ', { psid: maskPsid(psid) });
+  await recordEvent('tool_error', {
+    psid,
+    question: userText,
+    detail:
+      'Хэрэгслийн давталтын хязгаарт хүрлээ (' + config.claude.maxToolLoops + '). ' +
+      'Дуудсан хэрэгслүүд: ' + [...called].map((s) => s.split(':')[0]).join(', '),
+  });
   return { text: interim.length ? '' : FALLBACK_TEXT, handedOver, interim, messages: history };
 }
