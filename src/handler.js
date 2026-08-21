@@ -341,7 +341,9 @@ async function respondToTurn(psid, userText) {
     await sendSenderAction(psid, 'typing_off');
     // Ажилтан руу шилжүүлсэн бол мессежийг хэрэгсэл аль хэдийн илгээсэн.
     // Дахин илгээвэл Facebook татгалзана — thread control өөр апп-д шилжсэн.
-    if (!result.handedOver) {
+    // Текст хоосон байж болно: хэрэгсэл дуудахын өмнөх мессежийг аль
+    // хэдийн илгээсэн бол дээр нь хоосон юм давхарлахгүй.
+    if (!result.handedOver && result.text) {
       await sendText(psid, result.text);
     }
   } catch (err) {

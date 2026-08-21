@@ -26,6 +26,7 @@ import { buildSystemPrompt } from '../prompt.js';
 import { TOOLS, executeTool } from '../tools.js';
 import { recordEvent } from '../events.js';
 import { recordUsage } from '../usage.js';
+import { sendText } from '../messenger.js';
 import { FALLBACK_TEXT } from './shared.js';
 
 export const name = 'openai';
@@ -194,6 +195,12 @@ export async function generateReply({ history, userText, psid, userName = null, 
 
   let handedOver = false;
 
+  // ⚠️ Загвар нэг ээлжид ХОЁУЛАНГ нь гаргаж чадна: хэрэглэгчид хэлэх текст
+  // БОЛОН хэрэгслийн дуудлага. Урьд нь тэр текстийг хаядаг байсан тул
+  // "ЭЕШ өгөөгүй бол болох уу?" гэсэн асуултын хариу алга болж, зөвхөн
+  // карт үлддэг байв. Одоо тэр текстийг ШУУД илгээнэ.
+  const interim = [];
+
   for (let loop = 0; loop <= config.claude.maxToolLoops; loop += 1) {
     const { path, body } = buildRequest({
       model,
@@ -217,7 +224,7 @@ export async function generateReply({ history, userText, psid, userName = null, 
         question: userText,
         detail: ((err?.status ?? '') + ' ' + (err?.message ?? '')).trim(),
       });
-      return { text: FALLBACK_TEXT, handedOver, messages: history };
+      return { text: interim.length ? '' : FALLBACK_TEXT, handedOver, interim, messages: history };
     }
 
     await recordUsage(model, mapUsage(data?.usage, style));
@@ -234,7 +241,15 @@ export async function generateReply({ history, userText, psid, userName = null, 
       messages.push(message);
       const toolCalls = message.tool_calls ?? [];
       if (toolCalls.length === 0) {
-        return { text: (message.content ?? '').trim() || FALLBACK_TEXT, handedOver, messages };
+        const final = (message.content ?? '').trim();
+        return { text: final || (interim.length ? '' : FALLBACK_TEXT), handedOver, interim, messages };
+      }
+
+      // Хэрэгсэл дуудахын хажуугаар бичсэн текстийг хаяхгүй
+      const chatText = (message.content ?? '').trim();
+      if (chatText) {
+        interim.push(chatText);
+        if (!offline) await sendText(psid, chatText);
       }
 
       for (const call of toolCalls) {
@@ -272,7 +287,16 @@ export async function generateReply({ history, userText, psid, userName = null, 
 
     const calls = output.filter((o) => o.type === 'function_call');
     if (calls.length === 0) {
-      return { text: responsesText(data) || FALLBACK_TEXT, handedOver, messages };
+      const final = responsesText(data);
+      return { text: final || (interim.length ? '' : FALLBACK_TEXT), handedOver, interim, messages };
+    }
+
+    // Хэрэгсэл дуудахын хажуугаар бичсэн текст — хэрэглэгчийн асуултын
+    // хариу ихэвчлэн ЭНД байдаг. Картаас ӨМНӨ илгээнэ.
+    const said = responsesText(data);
+    if (said) {
+      interim.push(said);
+      if (!offline) await sendText(psid, said);
     }
 
     for (const call of calls) {
@@ -287,5 +311,5 @@ export async function generateReply({ history, userText, psid, userName = null, 
   }
 
   log.warn('Хэрэгслийн давталтын хязгаарт хүрлээ', { psid: maskPsid(psid) });
-  return { text: FALLBACK_TEXT, handedOver, messages: history };
+  return { text: interim.length ? '' : FALLBACK_TEXT, handedOver, interim, messages: history };
 }

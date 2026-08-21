@@ -11,6 +11,7 @@ import { buildSystemPrompt } from '../prompt.js';
 import { TOOLS, executeTool } from '../tools.js';
 import { recordEvent } from '../events.js';
 import { recordUsage } from '../usage.js';
+import { sendText } from '../messenger.js';
 import { FALLBACK_TEXT, REFUSAL_TEXT, isClaude5 } from './shared.js';
 
 export const name = 'anthropic';
@@ -49,6 +50,10 @@ export async function generateReply({ history, userText, psid, userName = null, 
 
   let handedOver = false;
 
+  // Хэрэгсэл дуудахын хажуугаар бичсэн текстийг хаяхгүй — хэрэглэгчийн
+  // асуултын хариу ихэвчлэн тэнд байдаг.
+  const interim = [];
+
   for (let loop = 0; loop <= config.claude.maxToolLoops; loop += 1) {
     let response;
     try {
@@ -77,7 +82,7 @@ export async function generateReply({ history, userText, psid, userName = null, 
         question: userText,
         detail: `${err?.status ?? ''} ${err?.message ?? ''}`.trim(),
       });
-      return { text: FALLBACK_TEXT, handedOver, messages: history };
+      return { text: interim.length ? '' : FALLBACK_TEXT, handedOver, interim, messages: history };
     }
 
     await recordUsage(model, response.usage);
@@ -95,13 +100,20 @@ export async function generateReply({ history, userText, psid, userName = null, 
         psid: maskPsid(psid),
         category: response.stop_details?.category,
       });
-      return { text: REFUSAL_TEXT, handedOver, messages: history };
+      return { text: REFUSAL_TEXT, handedOver, interim, messages: history };
     }
 
     messages.push({ role: 'assistant', content: response.content });
 
     if (response.stop_reason !== 'tool_use') {
-      return { text: collectText(response.content) || FALLBACK_TEXT, handedOver, messages };
+      const final = collectText(response.content);
+      return { text: final || (interim.length ? '' : FALLBACK_TEXT), handedOver, interim, messages };
+    }
+
+    const said = collectText(response.content);
+    if (said) {
+      interim.push(said);
+      if (!offline) await sendText(psid, said);
     }
 
     const toolUses = response.content.filter((block) => block.type === 'tool_use');
@@ -126,5 +138,5 @@ export async function generateReply({ history, userText, psid, userName = null, 
   }
 
   log.warn('Хэрэгслийн давталтын хязгаарт хүрлээ', { psid: maskPsid(psid) });
-  return { text: FALLBACK_TEXT, handedOver, messages: history };
+  return { text: interim.length ? '' : FALLBACK_TEXT, handedOver, interim, messages: history };
 }
