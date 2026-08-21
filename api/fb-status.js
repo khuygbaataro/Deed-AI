@@ -18,6 +18,8 @@ const SUBSCRIBED_FIELDS = [
   'message_deliveries',
   'message_reads',
   'messaging_handovers',
+  // Хуудсан дээрх сэтгэгдэл — сэтгэгдэлд автоматаар хариулахад ЗААВАЛ
+  'feed',
 ];
 
 const adminToken = () => {
@@ -118,6 +120,25 @@ export async function GET(request) {
       ? 'Захиалга хэвийн. Мессеж ирэхгүй бол Facebook апп-ын горимыг шалгана уу.'
       : 'Захиалга дутуу байна. Энэ хаягийн төгсгөлд ?fix=1 нэмж дахин нээнэ үү.';
   }
+
+  // Сэтгэгдлийн автомат хариу — юу дутууг тодорхой хэлнэ
+  const commentIssues = [];
+  if (!config.fb.pageId) commentIssues.push('FB_PAGE_ID тохируулаагүй');
+  const feedOk = !result.missingFields || !result.missingFields.includes('feed');
+  if (!feedOk) commentIssues.push('webhook дээр feed талбар захиалаагүй');
+
+  result.commentAutoReply = {
+    enabled: config.fb.commentAutoReply,
+    publicReply: config.fb.commentPublicReply,
+    pageIdSet: Boolean(config.fb.pageId),
+    feedSubscribed: feedOk,
+    issues: commentIssues,
+    hint: !config.fb.commentAutoReply
+      ? 'Унтраалттай. FB_COMMENT_AUTOREPLY=true болговол сэтгэгдэлд хариулж эхэлнэ.'
+      : commentIssues.length
+        ? 'Асаалттай ч дутуу зүйл байна — issues-г үзнэ үү.'
+        : 'Асаалттай, тохиргоо бүрэн.',
+  };
 
   return Response.json(result, {
     headers: { 'Cache-Control': 'no-store' },

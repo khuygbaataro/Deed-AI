@@ -4,6 +4,7 @@ import { generateReply } from './ai.js';
 import { GREETING, PAYLOAD_PROMPTS } from './prompt.js';
 import { getUserProfile, sendSenderAction, sendText } from './messenger.js';
 import { getSession, resetSession, saveSession, setHandedOver } from './sessions.js';
+import { handleComment } from './comments.js';
 import { getLead, saveLead } from './leads.js';
 import { notifyAdmins } from './messenger.js';
 import { kvAppend, kvClaim, kvDelete, kvDrainList } from './store.js';
@@ -54,6 +55,16 @@ export async function processWebhookBody(body) {
       jobs.push(
         handleEvent(event).catch((err) =>
           log.error('Үйл явдал боловсруулахад алдаа', { error: err.message, stack: err.stack }),
+        ),
+      );
+    }
+
+    // Хуудсан дээрх сэтгэгдэл — хүнийг Messenger рүү чиглүүлнэ
+    for (const change of entry.changes ?? []) {
+      if (change.field !== 'feed') continue;
+      jobs.push(
+        handleComment(change.value).catch((err) =>
+          log.error('Сэтгэгдэл боловсруулахад алдаа', { error: err.message }),
         ),
       );
     }

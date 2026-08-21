@@ -43,6 +43,17 @@ export const config = {
     inboxAppId: str(process.env.FB_INBOX_APP_ID, '263902037430900'),
     // Гарын үсгийн шалгалтыг алгасах (ЗӨВХӨН локал тест дээр)
     skipSignatureCheck: bool(process.env.FB_SKIP_SIGNATURE_CHECK, false),
+
+    // Page-ийн ID — өөрийн сэтгэгдэлд хариулахаас сэргийлэхэд хэрэгтэй.
+    // Тохируулаагүй бол бот өөрийнхөө хариунд дахин хариулж давталт үүсгэнэ.
+    pageId: str(process.env.FB_PAGE_ID),
+
+    // Сэтгэгдэл бичсэн хүн рүү Messenger-ээр хувийн мессеж илгээх эсэх.
+    // Facebook-ийн эрх бүрэн тохирсны ДАРАА асаана.
+    commentAutoReply: bool(process.env.FB_COMMENT_AUTOREPLY, false),
+
+    // Сэтгэгдэлд нийтээр харагдах хариу бичих эсэх
+    commentPublicReply: bool(process.env.FB_COMMENT_PUBLIC_REPLY, true),
   },
 
   // --- AI нийлүүлэгч ---
