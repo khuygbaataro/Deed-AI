@@ -341,6 +341,9 @@ export async function executeTool(call, ctx) {
               : 'ИРЭХ: ' + (lead.visit?.label ?? '-') + ', ' + (lead.visit?.time ?? '-'),
             'Хураамж: ' + formatMnt(TUITION.seatDeposit) +
               (online ? ' (дансаар)' : ' (бэлнээр)'),
+            ...(online
+              ? ['Гүйлгээний утга: ' + [lead.name, lead.phone].filter(Boolean).join(' ')]
+              : []),
           ].join(String.fromCharCode(10)),
         );
       } else if (!ctx.offline) {
@@ -363,6 +366,9 @@ export async function executeTool(call, ctx) {
                   ' (' + BANK_ACCOUNT.accountName + ') руу ' +
                   formatMnt(TUITION.seatDeposit) + ' шилжүүлэхийг сануул.',
                 'Данс, IBAN хоёуланг нь давт.',
+                'ГҮЙЛГЭЭНИЙ УТГАД яг энэ бичвэрийг бичихийг хэл:',
+                '"' + [lead.name, lead.phone].filter(Boolean).join(' ') + '"',
+                'Утга буруу бол санхүү төлбөрийг хэнийх нь болохыг олохгүй.',
                 'Төгсгөлд нь ирээдүйнхээ төлөө шийдвэр гаргасанд нь ДУЛААХАН',
                 'баяр хүргэ — emoji хэрэглэ.',
               ].join(' ')
@@ -399,6 +405,8 @@ export async function executeTool(call, ctx) {
             'IBAN ' + BANK_ACCOUNT.iban + ',',
             'хүлээн авагч ' + BANK_ACCOUNT.accountName + '.',
             'Дансны дугаар, IBAN ХОЁУЛАНГ нь бич — зарим банкнаас IBAN-аар шилжүүлнэ.',
+            '⚠️ ГҮЙЛГЭЭНИЙ УТГАД нэр, утасны дугаараа бичихийг ЗААВАЛ хэл —',
+            'эс бөгөөс мөнгө ирээд хэнийх нь болох нь мэдэгдэхгүй.',
             'Гэрээг gmail хаягаар нь илгээнэ.',
             'Дараа нь НЭГ асуулт: нэрийг нь асуу. Утас, gmail-ыг ТУС ТУСАД нь дараалуулж ав.',
           ].join(' '),
