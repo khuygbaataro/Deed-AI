@@ -108,7 +108,14 @@ export async function handleEvent(event) {
   let userText = event.message?.text?.trim();
   if (payload && PAYLOAD_PROMPTS[payload]) userText = PAYLOAD_PROMPTS[payload];
 
-  // Текст биш контент (зураг, файл, наалт)
+  // Наалт, like — зөвшөөрлийн хариу гэж үзэж, яриаг ҮРГЭЛЖЛҮҮЛНЭ.
+  // Зураг гэж андуурвал "Зургийг хүлээн авлаа" гээд яриа тасардаг.
+  if (!userText) {
+    const sticker = stickerText(event.message);
+    if (sticker) userText = sticker;
+  }
+
+  // Текст биш контент (зураг, файл)
   if (!userText) {
     const attachments = event.message?.attachments ?? [];
     if (attachments.length) {
@@ -216,6 +223,30 @@ export async function handleEvent(event) {
   }
 }
 
+/**
+ * Мессеж нь НААЛТ (sticker) эсвэл LIKE мөн эсэх.
+ *
+ * Facebook "like" товчийг зураг хэлбэрээр илгээдэг. Тиймээс бот түүнийг
+ * төлбөрийн баримт гэж андуурч "Зургийг хүлээн авлаа" гэж хариулаад,
+ * яриа тасардаг байв. Хүн зүгээр л "за" гэж зөвшөөрч байгаа хэрэг.
+ *
+ * Facebook-ийн эрхий хурууны sticker_id-ууд (жижиг, дунд, том хэмжээ).
+ */
+const THUMBS_UP_IDS = new Set([
+  '369239263222822',
+  '369239343222814',
+  '369239383222810',
+]);
+
+export function stickerText(message) {
+  const stickerId =
+    message?.sticker_id ??
+    message?.attachments?.find((a) => a.payload?.sticker_id)?.payload?.sticker_id;
+  if (stickerId === undefined || stickerId === null) return null;
+
+  // Эрхий хуруу = зөвшөөрөл. Бусад наалт = эерэг хариу.
+  return THUMBS_UP_IDS.has(String(stickerId)) ? '👍' : '🙂';
+}
 /**
  * Зураг, файл ирэхэд юу хийх вэ.
  *
