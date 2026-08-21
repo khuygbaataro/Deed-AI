@@ -16,6 +16,21 @@ const INDEX_KEY = 'leads:index';
 
 const key = (psid) => `lead:${psid}`;
 
+/**
+ * Элсэлтийн ажилтны ажлын явц.
+ *
+ * Ботын `stage`-ээс ТУСДАА: stage нь чатбот юу хийснийг, callStatus нь
+ * ажилтан тухайн хүнтэй юу хийснийг хэлнэ. Хоёуланг нь хольж болохгүй.
+ */
+export const CALL_STATUSES = {
+  new: 'Шинэ',
+  to_call: 'Залгах',
+  called: 'Залгасан',
+  no_answer: 'Утас авахгүй',
+  enrolled: 'Элссэн',
+  declined: 'Татгалзсан',
+};
+
 /** Яриа ямар шатанд явж байгаа */
 export const STAGES = {
   new: 'Шинэ',
@@ -84,6 +99,7 @@ export async function getLead(psid) {
     invoice: null,
     registrationMode: null,
     notes: [],
+    callStatus: 'new',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -114,6 +130,28 @@ export async function saveLead(psid, patch = {}) {
     program: next.programName ?? null,
   });
   return next;
+}
+
+/**
+ * Элсэлтийн ажилтны тэмдэглэл, ажлын явцыг хадгална.
+ *
+ * Тэмдэглэл нь ХУРИМТЛАГДАНА — хуучныг дарж бичихгүй. Хэн, хэзээ юу
+ * ярьсныг дараа нь эргэж харах боломжтой байх ёстой.
+ *
+ * @param {string} psid
+ * @param {{text?: string, callStatus?: string}} input
+ */
+export async function addStaffNote(psid, { text, callStatus } = {}) {
+  const current = await getLead(psid);
+  const notes = Array.isArray(current.notes) ? [...current.notes] : [];
+
+  const clean = typeof text === 'string' ? text.trim().slice(0, 1000) : '';
+  if (clean) notes.unshift({ ts: new Date().toISOString(), text: clean });
+
+  const patch = { notes };
+  if (callStatus && CALL_STATUSES[callStatus]) patch.callStatus = callStatus;
+
+  return saveLead(psid, patch);
 }
 
 /** Хяналтын самбарт зориулж бүртгэлүүдийг жагсаана (сүүлийнхээс нь эхлэн) */
