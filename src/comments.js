@@ -17,7 +17,7 @@
  */
 import { config } from './config.js';
 import { log } from './logger.js';
-import { kvClaim } from './store.js';
+import { kvClaim, kvGet, kvSet } from './store.js';
 
 const CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60; // Facebook-ийн 7 хоногийн цонхтой ижил
 
@@ -33,6 +33,45 @@ export const PRIVATE_REPLY = `Сайн байна уу 👋
 export const PUBLIC_REPLY =
   'Сайн байна уу! Танд хувийн мессежээр дэлгэрэнгүй мэдээлэл илгээлээ 💌 ' +
   'Messenger-ээ шалгаарай.';
+
+const PAGE_ID_KEY = 'fb:page_id';
+const PAGE_ID_TTL = 30 * 24 * 60 * 60; // 30 хоног
+
+/**
+ * Хуудасны ID-г олно.
+ *
+ * Гараар тохируулаагүй бол Facebook-ээс өөрөө асууж, кэшилнэ. Энэ ID нь
+ * ЗААВАЛ хэрэгтэй: ботын өөрийн бичсэн нийтийн хариунд дахин хариулбал
+ * төгсгөлгүй давталт үүснэ.
+ *
+ * @returns {Promise<string|null>}
+ */
+export async function getPageId() {
+  if (config.fb.pageId) return config.fb.pageId;
+
+  const cached = await kvGet(PAGE_ID_KEY);
+  if (typeof cached === 'string' && cached) return cached;
+
+  if (!config.fb.pageAccessToken) return null;
+
+  try {
+    const res = await fetch(
+      graphUrl('me?fields=id') +
+        '&access_token=' + encodeURIComponent(config.fb.pageAccessToken),
+    );
+    const data = await res.json();
+    if (!res.ok || !data?.id) {
+      log.warn('Хуудасны ID олдсонгүй', { error: data?.error?.message });
+      return null;
+    }
+    await kvSet(PAGE_ID_KEY, String(data.id), PAGE_ID_TTL);
+    log.info('Хуудасны ID илэрлээ', { pageId: data.id });
+    return String(data.id);
+  } catch (err) {
+    log.warn('Хуудасны ID авахад алдаа', { error: err.message });
+    return null;
+  }
+}
 
 function graphUrl(path) {
   return `https://graph.facebook.com/${config.fb.graphVersion}/${path}`;
@@ -97,9 +136,16 @@ export async function handleComment(value) {
   const commentId = value.comment_id;
   if (!commentId) return { handled: false, reason: 'id алга' };
 
-  // Page өөрөө бичсэн сэтгэгдэлд хариулбал өөртэйгөө ярина
+  // Page өөрөө бичсэн сэтгэгдэлд хариулбал өөртэйгөө ярьж, төгсгөлгүй
+  // давталт үүснэ. Хуудасны ID мэдэхгүй бол ЭРСДЭЛ хийхгүй — зогсоно.
+  const pageId = await getPageId();
+  if (!pageId) {
+    log.warn('Хуудасны ID тодорхойгүй тул сэтгэгдэлд хариулсангүй');
+    return { handled: false, reason: 'хуудасны ID тодорхойгүй' };
+  }
+
   const fromId = String(value.from?.id ?? '');
-  if (fromId && config.fb.pageId && fromId === config.fb.pageId) {
+  if (fromId === pageId) {
     return { handled: false, reason: 'өөрийн сэтгэгдэл' };
   }
 

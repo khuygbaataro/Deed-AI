@@ -10,6 +10,7 @@
  * Хамгаалалт: ADMIN_TOKEN (Basic auth, самбартай ижил).
  */
 import { config } from '../src/config.js';
+import { getPageId } from '../src/comments.js';
 
 const SUBSCRIBED_FIELDS = [
   'messages',
@@ -123,21 +124,44 @@ export async function GET(request) {
 
   // Сэтгэгдлийн автомат хариу — юу дутууг тодорхой хэлнэ
   const commentIssues = [];
-  if (!config.fb.pageId) commentIssues.push('FB_PAGE_ID тохируулаагүй');
-  const feedOk = !result.missingFields || !result.missingFields.includes('feed');
-  if (!feedOk) commentIssues.push('webhook дээр feed талбар захиалаагүй');
+
+  // Хуудасны ID: гараар тохируулсан эсвэл Facebook-ээс өөрөө олсон
+  const pageId = await getPageId().catch(() => null);
+  if (!pageId) commentIssues.push('Хуудасны ID тодорхойгүй — токеноо шалгана уу');
+
+  // ⚠️ Захиалгыг УНШИЖ чадаагүй бол "захиалсан" гэж ХЭЛЖ БОЛОХГҮЙ.
+  // Урьд нь missingFields хоосон байхад ногоон харуулж, худал итгэл өгдөг байв.
+  const feedOk = result.subscription?.error
+    ? null
+    : !(result.missingFields ?? []).includes('feed');
+  if (feedOk === false) commentIssues.push('webhook дээр feed талбар захиалаагүй');
+  if (feedOk === null) {
+    commentIssues.push(
+      'feed захиалагдсан эсэхийг ШАЛГАЖ ЧАДСАНГҮЙ — pages_manage_metadata эрх дутуу',
+    );
+  }
 
   result.commentAutoReply = {
     enabled: config.fb.commentAutoReply,
     publicReply: config.fb.commentPublicReply,
-    pageIdSet: Boolean(config.fb.pageId),
-    feedSubscribed: feedOk,
+    pageId: pageId ?? null,
+    pageIdSource: config.fb.pageId ? 'FB_PAGE_ID' : pageId ? 'автоматаар олсон' : null,
+    feedSubscribed: feedOk === null ? 'тодорхойгүй' : feedOk,
     issues: commentIssues,
-    hint: !config.fb.commentAutoReply
-      ? 'Унтраалттай. FB_COMMENT_AUTOREPLY=true болговол сэтгэгдэлд хариулж эхэлнэ.'
-      : commentIssues.length
-        ? 'Асаалттай ч дутуу зүйл байна — issues-г үзнэ үү.'
-        : 'Асаалттай, тохиргоо бүрэн.',
+    hint: commentIssues.length
+      ? 'Дутуу зүйл байна — issues-г үзнэ үү. Засахгүйгээр асаавал ажиллахгүй.'
+      : config.fb.commentAutoReply
+        ? 'Тохиргоо бүрэн, асаалттай.'
+        : 'Тохиргоо бүрэн. FB_COMMENT_AUTOREPLY=true болговол ажиллаж эхэлнэ.',
+    steps: commentIssues.length
+      ? [
+          '1. developers.facebook.com → апп → Webhooks → Page → Subscribe: feed',
+          '   (Энэ нь самбараас хийгддэг тул токенд нэмэлт эрх ХЭРЭГГҮЙ.)',
+          '2. Эрх нэмэх бол: Graph API Explorer → pages_manage_metadata,',
+          '   pages_manage_engagement, pages_read_engagement → шинэ Page токен үүсгэнэ.',
+          '3. Vercel: FB_COMMENT_AUTOREPLY=true',
+        ]
+      : undefined,
   };
 
   return Response.json(result, {
