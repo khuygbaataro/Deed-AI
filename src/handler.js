@@ -48,8 +48,15 @@ export async function processWebhookBody(body) {
   const jobs = [];
 
   for (const entry of body?.entry ?? []) {
-    // standby = яриаг өөр апп (Page Inbox) хариуцаж байна -> бот дуугарахгүй
-    if (entry.standby?.length) continue;
+    // standby = яриаг өөр апп хариуцаж байна -> бот дуугарахгүй.
+    //
+    // Ингэж болдог: Page Inbox дээр ажилтан яриаг авсан, ЭСВЭЛ Meta-гийн
+    // өөрийн AI агент асаалттай байгаа. Сүүлийнх нь хуучин, буруу мэдээлэл
+    // тарааж болзошгүй тул ХЭДЭН яриа ингэж алдагдаж байгааг тоолно.
+    if (entry.standby?.length) {
+      jobs.push(recordStandby(entry.standby));
+      continue;
+    }
 
     for (const event of entry.messaging ?? []) {
       jobs.push(
@@ -84,6 +91,28 @@ export async function processWebhookBody(body) {
   }
 
   await Promise.allSettled(jobs);
+}
+
+/**
+ * Яриаг өөр апп авсныг бүртгэнэ.
+ *
+ * Хүн бүрийн мессеж бүрийг бүртгэвэл жагсаалт дүүрнэ — нэг хүнийг
+ * цагт нэг л удаа тоолно.
+ */
+async function recordStandby(standby) {
+  const psid = standby[0]?.sender?.id;
+  if (!psid) return;
+  const fresh = await kvClaim(`standby:${psid}`, 3600);
+  if (!fresh) return;
+
+  log.warn('Яриаг өөр апп хариуцаж байна', { psid: maskPsid(psid) });
+  await recordEvent('standby', {
+    psid,
+    question: standby[0]?.message?.text ?? '',
+    detail:
+      'Манай бот хариулаагүй. Page Inbox дээр ажилтан авсан эсвэл ' +
+      'Meta-гийн AI агент асаалттай байна.',
+  });
 }
 
 /**

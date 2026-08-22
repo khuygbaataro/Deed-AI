@@ -23,6 +23,7 @@ export const EVENT_TYPES = {
   send_error: 'Мессеж илгээх алдаа',
   dropped: 'Мессеж боловсруулагдаагүй',
   rate_limited: 'Хурдны хязгаар',
+  standby: 'Өөр апп яриаг авсан',
 };
 
 /**
