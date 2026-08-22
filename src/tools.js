@@ -13,6 +13,7 @@ import {
   REGISTRATION,
   WORKING_WEEKDAYS,
   BANK_ACCOUNT,
+  REGISTER_URL,
   findTrack,
   overviewImageUrl,
   programImageUrl,
@@ -360,7 +361,9 @@ export async function executeTool(call, ctx) {
           content: online
             ? [
                 'Бүх мэдээлэл бүртгэгдэж, элсэлтийн албанд БҮРЭН тайлан очлоо.',
-                'Одоо яриаг дуусга: гэрээг gmail хаягаар нь илгээхийг хэл,',
+                'Одоо яриаг дуусга. Эхлээд цахим бүртгэлийн хаягийг ДАВТАЖ хэл:',
+                REGISTER_URL,
+                'Хаягийг яг хэвээр нь бич. Дараа нь гэрээг gmail хаягаар нь илгээхийг хэл,',
                 BANK_ACCOUNT.bankName + ', данс ' + BANK_ACCOUNT.accountNumber +
                   ', IBAN ' + BANK_ACCOUNT.iban +
                   ' (' + BANK_ACCOUNT.accountName + ') руу ' +
@@ -400,7 +403,9 @@ export async function executeTool(call, ctx) {
           content: [
             'Онлайн бүртгэлийн зам сонгогдлоо.',
             'Хэрэглэгчид дараахыг ТОВЧ хэл:',
-            'суудал баталгаажуулах ' + formatMnt(TUITION.seatDeposit) + '-г дараах данс руу шилжүүлнэ —',
+            '1) Цахим бүртгэлийг ЭНЭ ХАЯГААР хийнэ — ' + REGISTER_URL,
+            'Хаягийг ЯГ ХЭВЭЭР нь бич, богиносгож эсвэл өөрчилж БОЛОХГҮЙ.',
+            '2) Суудал баталгаажуулах ' + formatMnt(TUITION.seatDeposit) + '-г дараах данс руу шилжүүлнэ —',
             BANK_ACCOUNT.bankName + ', данс ' + BANK_ACCOUNT.accountNumber + ',',
             'IBAN ' + BANK_ACCOUNT.iban + ',',
             'хүлээн авагч ' + BANK_ACCOUNT.accountName + '.',
